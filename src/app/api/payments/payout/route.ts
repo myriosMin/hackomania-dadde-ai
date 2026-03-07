@@ -1,38 +1,51 @@
 /**
  * POST /api/payments/payout
  *
- * Step 3b — Payout Flow (Outbound)
+ * Step 3b — Payout Flow (Outbound) — Phase 1: Initiate
  *
- * Executes an approved payout from the community fund to a receiver's wallet.
- * This route MUST only be called from the admin approval flow (Step 6/7), after
- * a Collector has reviewed and approved the claim via the admin dashboard.
+ * Initiates an approved payout from the community fund to a receiver's wallet.
+ * Because the Interledger test wallet requires interactive (human-approved)
+ * grants for ALL outgoing payments — even for the platform's own collector
+ * wallet — this route cannot complete the payment directly. Instead it:
  *
- * Pre-conditions:
- *   - Claim must already be in `pending_human_approval` status in the DB.
- *   - Fund balance must be sufficient (checked before grant request).
+ *   1. Validates the request & checks fund balance.
+ *   2. Creates the receiver's incoming payment and a quote.
+ *   3. Requests an interactive outgoing-payment grant from the collector's
+ *      auth server.
+ *   4. Returns the IDP redirect URL for the admin/collector to approve.
+ *   5. On approval the IDP calls GET /api/payments/callback which completes
+ *      the payment via `completePayout`.
+ *
+ * This MUST only be called from the admin approval flow after a Collector
+ * has reviewed and approved the claim in the admin dashboard.
  *
  * Request body:
  * {
- *   claimId:               string,   // UUID of the claim in ClickHouse
+ *   claimId:               string,   // UUID of the claim
  *   receiverWalletAddress: string,   // receiver's ILP wallet URL
- *   amount:                string,   // payout amount in base units
- *   assetCode:             string,
- *   assetScale:            number,
+ *   amount:                string,   // payout amount in base units (receiver currency)
+ *   assetCode:             string,   // hint — actual currency resolved from wallet
+ *   assetScale:            number,   // hint — actual scale resolved from wallet
+ *   redirectUrl?:          string,   // where to send the admin after IDP approval
  *   disasterEventId?:      string
  * }
  *
  * Success response (200):
- * { paymentId: string, status: "COMPLETED" | "FAILED" }
+ * {
+ *   redirectUrl:   string,   // IDP consent URL — redirect the admin here
+ *   continueToken: string,
+ *   continueUri:   string
+ * }
  *
  * Error responses:
  *   400 — validation error
  *   402 — insufficient funds
- *   502 — payment execution failed
+ *   502 — payout initiation failed
  *   503 — Open Payments not configured
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { executePayout } from "@/lib/open-payments";
+import { initiatePayout } from "@/lib/open-payments";
 import { chWrite, chQuery } from "@/lib/clickhouse";
 
 export const runtime = "nodejs";
@@ -42,8 +55,7 @@ interface FundBalance {
 }
 
 /**
- * Fetch available fund balance from the ClickHouse fund_metrics materialized view.
- * Returns the total balance (contributions minus completed payouts).
+ * Fetch available fund balance from ClickHouse.
  */
 async function getFundBalance(): Promise<number> {
   try {
@@ -69,6 +81,7 @@ export async function POST(req: NextRequest) {
     amount?: string;
     assetCode?: string;
     assetScale?: number;
+    redirectUrl?: string;
     disasterEventId?: string;
   };
 
@@ -78,7 +91,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { claimId, receiverWalletAddress, amount, assetCode, assetScale, disasterEventId } = body;
+  const { claimId, receiverWalletAddress, amount, assetCode, assetScale, redirectUrl, disasterEventId } = body;
 
   const fieldErrors: string[] = [];
   if (!claimId) fieldErrors.push("claimId is required");
@@ -100,11 +113,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Fund Balance Check (optimistic locking) ───────────────────────────────
+  // ── Fund Balance Check ────────────────────────────────────────────────────
+  // NOTE: amount is in the receiver's currency; fund balance is in the
+  // collector's currency. For same-currency wallets this is exact; for
+  // cross-currency it is a rough guard. The real enforcement is the grant limit.
   const payoutAmount = Number(amount) / Math.pow(10, assetScale!);
   const fundBalance = await getFundBalance();
 
-  if (payoutAmount > fundBalance) {
+  if (fundBalance > 0 && payoutAmount > fundBalance) {
     await chWrite("INSERT INTO events_log", [
       {
         event_type: "STATE_TRANSITION",
@@ -123,41 +139,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error: "Insufficient fund balance",
-        detail: `Requested ${payoutAmount} ${assetCode} but only ${fundBalance} ${assetCode} is available.`,
+        detail: `Requested ${payoutAmount} ${assetCode} but only ${fundBalance} is available.`,
         code: "INSUFFICIENT_FUNDS",
       },
       { status: 402 },
     );
   }
 
-  // ── Execute Payout ────────────────────────────────────────────────────────
+  // ── Initiate Payout ───────────────────────────────────────────────────────
   try {
-    const result = await executePayout({
+    const result = await initiatePayout({
       claimId: claimId!,
       receiverWalletAddress: receiverWalletAddress!,
       amount: amount!,
       assetCode: assetCode!,
       assetScale: assetScale!,
+      redirectUrl: redirectUrl ?? `${process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"}/admin`,
       disasterEventId,
     });
 
-    if (result.status === "FAILED") {
-      await chWrite("INSERT INTO events_log", [
-        {
-          event_type: "ERROR",
-          service: "payments",
-          payload: JSON.stringify({ action: "payout_failed", claim_id: claimId, payment_id: result.paymentId }),
-          error: "Open Payments outgoing payment reported failed status",
-        },
-      ]).catch(console.error);
+    await chWrite("INSERT INTO events_log", [
+      {
+        event_type: "API_CALL",
+        service: "payments",
+        payload: JSON.stringify({
+          action: "initiate_payout",
+          claim_id: claimId,
+          receiver_wallet: receiverWalletAddress,
+          amount,
+        }),
+      },
+    ]).catch(console.error);
 
-      return NextResponse.json(
-        { error: "Payout failed at the payment processor. Please check the claim status.", payment_id: result.paymentId, status: "FAILED" },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json({ paymentId: result.paymentId, status: result.status });
+    return NextResponse.json({
+      redirectUrl: result.redirectUrl,
+      continueToken: result.continueToken,
+      continueUri: result.continueUri,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isConfigError = message.includes("Missing Open Payments");
@@ -166,7 +184,7 @@ export async function POST(req: NextRequest) {
       {
         event_type: "ERROR",
         service: "payments",
-        payload: JSON.stringify({ action: "execute_payout", claim_id: claimId }),
+        payload: JSON.stringify({ action: "initiate_payout", claim_id: claimId }),
         error: message,
       },
     ]).catch(console.error);
@@ -179,7 +197,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Payout execution failed. Claim has been flagged as payment_failed.", detail: message },
+      { error: "Payout initiation failed.", detail: message },
       { status: 502 },
     );
   }

@@ -18,8 +18,13 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Loader2,
+  CheckCircle2,
+  Wallet,
+  Send,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 
 interface PayoutRequest {
   id: string;
@@ -51,10 +56,53 @@ interface Transaction {
 }
 
 export function AdminDashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTab, setSelectedTab] = useState<"all" | "payouts" | "verifications">("all");
   const [focusedCardIndex, setFocusedCardIndex] = useState<number | null>(null);
   const [focusedCardType, setFocusedCardType] = useState<"payout" | "verification" | null>(null);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
+
+  // Payout execution state
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+  const [payoutTarget, setPayoutTarget] = useState<PayoutRequest | null>(null);
+  const [receiverWallet, setReceiverWallet] = useState("");
+  const [payoutAmount, setPayoutAmount] = useState("");
+  const [isPayoutProcessing, setIsPayoutProcessing] = useState(false);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+  const [payoutSuccess, setPayoutSuccess] = useState<string | null>(null);
+  const [walletAssetCode, setWalletAssetCode] = useState("USD");
+  const [walletAssetScale, setWalletAssetScale] = useState(2);
+
+  // Fetch fund wallet currency on mount
+  useEffect(() => {
+    fetch("/api/payments/wallet-info")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.assetCode) setWalletAssetCode(data.assetCode);
+        if (data.assetScale !== undefined) setWalletAssetScale(data.assetScale);
+      })
+      .catch(() => {/* keep defaults */});
+  }, []);
+
+  // Handle IDP callback return for payouts
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (!status) return;
+
+    if (status === "success") {
+      const paymentId = searchParams.get("payment_id") ?? "";
+      setPayoutSuccess(
+        `Payout completed successfully!${paymentId ? ` Payment ID: ${paymentId}` : ""}`
+      );
+    } else if (status === "cancelled") {
+      setPayoutError("Payout was cancelled at the IDP. You can try again.");
+    } else if (status === "error") {
+      const message = searchParams.get("message") ?? "Something went wrong";
+      setPayoutError(message);
+    }
+
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Mock data for key metrics
   const metrics = {
@@ -173,8 +221,65 @@ export function AdminDashboardPage() {
   ]);
 
   const handleApprove = (id: string, type: "payout" | "verification") => {
-    console.log(`Approved ${type}:`, id);
-    // Handle approval logic
+    if (type === "payout") {
+      const request = payoutRequests.find((p) => p.id === id);
+      if (request) {
+        setPayoutTarget(request);
+        setPayoutAmount(String(request.suggestedAmount));
+        setReceiverWallet("");
+        setPayoutError(null);
+        setPayoutSuccess(null);
+        setPayoutModalOpen(true);
+      }
+    } else {
+      console.log(`Approved ${type}:`, id);
+    }
+  };
+
+  const handleExecutePayout = async () => {
+    if (!payoutTarget || !receiverWallet || !payoutAmount) return;
+
+    setIsPayoutProcessing(true);
+    setPayoutError(null);
+
+    try {
+      const baseAmount = String(
+        Math.round(Number(payoutAmount) * Math.pow(10, walletAssetScale))
+      );
+
+      const res = await fetch("/api/payments/payout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          claimId: payoutTarget.id,
+          receiverWalletAddress: receiverWallet,
+          amount: baseAmount,
+          assetCode: walletAssetCode,
+          assetScale: walletAssetScale,
+          redirectUrl: window.location.pathname,
+          disasterEventId: payoutTarget.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? data.errors?.join(", ") ?? "Payout initiation failed"
+        );
+      }
+
+      if (data.redirectUrl) {
+        // Interactive grant — redirect admin to IDP for consent
+        window.location.href = data.redirectUrl;
+      }
+    } catch (err) {
+      setPayoutError(
+        err instanceof Error ? err.message : "Payout failed. Please try again."
+      );
+    } finally {
+      setIsPayoutProcessing(false);
+    }
   };
 
   const handleReject = (id: string, type: "payout" | "verification") => {
@@ -183,8 +288,15 @@ export function AdminDashboardPage() {
   };
 
   const handleModify = (id: string) => {
-    console.log(`Modify payout:`, id);
-    // Handle modify logic
+    const request = payoutRequests.find((p) => p.id === id);
+    if (request) {
+      setPayoutTarget(request);
+      setPayoutAmount(String(request.suggestedAmount));
+      setReceiverWallet("");
+      setPayoutError(null);
+      setPayoutSuccess(null);
+      setPayoutModalOpen(true);
+    }
   };
 
   const handleRequestInfo = (id: string) => {
@@ -246,6 +358,32 @@ export function AdminDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Payout status banners */}
+        {payoutError && (
+          <div className="mb-6 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+            <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+            <div className="flex-1">
+              <p className="font-medium text-red-800">Payout failed</p>
+              <p className="text-sm text-red-600">{payoutError}</p>
+            </div>
+            <button onClick={() => setPayoutError(null)} className="text-red-400 hover:text-red-600" aria-label="Dismiss error">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        {payoutSuccess && (
+          <div className="mb-6 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+            <div className="flex-1">
+              <p className="font-medium text-green-800">Payout successful!</p>
+              <p className="text-sm text-green-600">{payoutSuccess}</p>
+            </div>
+            <button onClick={() => setPayoutSuccess(null)} className="text-green-400 hover:text-green-600" aria-label="Dismiss success">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* TOP SECTION - Key Metrics */}
         <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -739,6 +877,118 @@ export function AdminDashboardPage() {
             ))}
           </div>
         </div>
+        {/* Payout Execution Modal */}
+        {payoutModalOpen && payoutTarget && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
+              <button
+                onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 transition-all hover:bg-gray-200"
+                aria-label="Close payout modal"
+              >
+                <X className="h-5 w-5 text-gray-900" />
+              </button>
+
+              <div className="mb-6 flex items-center gap-3">
+                <div className="rounded-lg bg-teal-500 p-2">
+                  <Send className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Execute Payout</h2>
+                  <p className="text-sm text-gray-600">{payoutTarget.eventName}</p>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-xl bg-gray-50 p-4">
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">Event</span>
+                  <span className="font-medium text-gray-900">{payoutTarget.eventName}</span>
+                </div>
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">AI Confidence</span>
+                  <span className="font-medium text-purple-600">{payoutTarget.aiConfidence}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Priority</span>
+                  <span className={`font-medium ${
+                    payoutTarget.severity === "high" ? "text-red-600" : payoutTarget.severity === "medium" ? "text-orange-600" : "text-yellow-600"
+                  }`}>
+                    {payoutTarget.severity.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Payout Amount ({walletAssetCode})
+                </label>
+                <input
+                  type="number"
+                  value={payoutAmount}
+                  onChange={(e) => setPayoutAmount(e.target.value)}
+                  placeholder="Amount in display units"
+                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="mb-6">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Receiver Wallet Address
+                </label>
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={receiverWallet}
+                    onChange={(e) => setReceiverWallet(e.target.value)}
+                    placeholder="https://ilp.interledger-test.dev/receiver"
+                    className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Enter the recipient organization&apos;s Open Payments wallet address
+                </p>
+              </div>
+
+              {payoutError && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <p className="text-sm text-red-600">{payoutError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExecutePayout}
+                  disabled={isPayoutProcessing || !receiverWallet || !payoutAmount}
+                  className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPayoutProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Initiating payout…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Send className="h-4 w-4" />
+                      Approve & Send via IDP
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                  className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-xs text-gray-500">
+                You will be redirected to the IDP to authorize this payout from the fund wallet.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <Footer />
