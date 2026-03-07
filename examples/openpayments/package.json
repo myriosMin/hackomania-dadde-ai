@@ -1,0 +1,26 @@
+{
+  "name": "openpayments-examples",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "bash tests/run-tests.sh",
+    "callback": "tsx src/00-callback-server.ts",
+    "wallet": "tsx src/01-wallet-info.ts",
+    "grant:incoming": "tsx src/02-create-incoming-grant.ts",
+    "incoming:create": "tsx src/03-create-incoming-payment.ts",
+    "quote:create": "tsx src/04-create-quote.ts",
+    "grant:outgoing:start": "tsx src/05-start-outgoing-grant.ts",
+    "grant:outgoing:continue": "tsx src/06-continue-grant.ts",
+    "outgoing:create": "tsx src/07-create-outgoing-payment.ts"
+  },
+  "dependencies": {
+    "@interledger/open-payments": "^3.0.0",
+    "dotenv": "^16.6.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
