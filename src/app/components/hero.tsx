@@ -1,11 +1,44 @@
+ "use client";
+
 import { ArrowRight, Info } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useNavigate } from "react-router";
+import { useEffect, useRef } from "react";
 
-const Globe = dynamic(() => import("react-globe.gl"), { ssr: false });
+type GlobeMaterial = {
+  color: { set: (value: string) => void };
+  emissive: { set: (value: string) => void };
+  emissiveIntensity: number;
+  shininess: number;
+};
+
+type GlobeInstance = {
+  globeMaterial: () => GlobeMaterial | null;
+};
+
+const Globe = dynamic(() => import("react-globe.gl").then((m) => m.default), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] w-[320px] items-center justify-center rounded-full border border-teal-200 bg-white/60 text-sm text-gray-500">
+      Loading globe...
+    </div>
+  ),
+});
 
 export function Hero() {
   const navigate = useNavigate();
+  const globeRef = useRef<GlobeInstance | null>(null);
+
+  useEffect(() => {
+    // Fallback styling so the globe remains visible even if texture URL fails.
+    if (!globeRef.current) return;
+    const material = globeRef.current.globeMaterial();
+    if (!material) return;
+    material.color.set("#0f172a");
+    material.emissive.set("#0ea5e9");
+    material.emissiveIntensity = 0.2;
+    material.shininess = 0.9;
+  }, []);
 
   const handleDonateClick = () => {
     // Go directly to payment page - collective disaster fund
@@ -49,9 +82,9 @@ export function Hero() {
         {/* Right side - 3D Globe with Metrics */}
         <div className="relative flex items-center justify-center">
           {/* Globe Container */}
-          <div className="relative h-[500px] w-[500px]">
+          <div className="relative h-[1500px] w-[1500px]">
             {/* Globe */}
-            <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 -translate-y-1/2">
+            <div className="absolute left-1/2 top-1/2 h-[960px] w-[960px] -translate-x-1/2 -translate-y-1/2">
               {/* Globe sphere with gradient and glow */}
               <div className="relative h-full w-full">
                 {/* Glow effect */}
@@ -60,10 +93,12 @@ export function Hero() {
                 {/* Main globe (clouds variant) */}
                 <div className="relative z-10 h-full w-full">
                   <Globe
-                    width={320}
-                    height={320}
+                    ref={globeRef}
+                    width={960}
+                    height={960}
                     backgroundColor="rgba(0,0,0,0)"
-                    globeImageUrl="https://unpkg.com/three-globe/example/img/earth-clouds.png"
+                    globeImageUrl="https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg"
+                    waitForGlobeReady={false}
                     showAtmosphere
                     atmosphereColor="#22d3ee"
                     atmosphereAltitude={0.16}
@@ -81,10 +116,10 @@ export function Hero() {
             <div className="absolute left-0 top-12">
               <div className="group relative">
                 {/* Pointer line */}
-                <svg className="absolute left-full top-1/2 h-24 w-24" style={{ transform: 'translateY(-50%)' }}>
-                  <line x1="0" y1="12" x2="90" y2="48" stroke="#0891b2" strokeWidth="1" opacity="0.4" strokeDasharray="2,2" />
+                <svg className="absolute left-full top-1/2 h-[300px] w-[420px]" style={{ transform: 'translateY(-12%)' }}>
+                  <line x1="0" y1="20" x2="340" y2="238" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
                 </svg>
-                
+
                 {/* Metric card */}
                 <div className="rounded-xl border border-teal-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
                   <div className="text-xs font-medium text-gray-600">Active Campaigns</div>
@@ -97,10 +132,10 @@ export function Hero() {
             <div className="absolute right-0 top-20">
               <div className="group relative">
                 {/* Pointer line */}
-                <svg className="absolute right-full top-1/2 h-24 w-24" style={{ transform: 'translateY(-50%)' }}>
-                  <line x1="96" y1="12" x2="6" y2="48" stroke="#0891b2" strokeWidth="1" opacity="0.4" strokeDasharray="2,2" />
+                <svg className="absolute right-full top-1/2 h-[300px] w-[420px]" style={{ transform: 'translateY(-12%)' }}>
+                  <line x1="420" y1="20" x2="80" y2="238" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
                 </svg>
-                
+
                 {/* Metric card */}
                 <div className="rounded-xl border border-cyan-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
                   <div className="text-xs font-medium text-gray-600">Funds Available</div>
@@ -113,10 +148,10 @@ export function Hero() {
             <div className="absolute bottom-20 left-4">
               <div className="group relative">
                 {/* Pointer line */}
-                <svg className="absolute left-full top-1/2 h-24 w-24" style={{ transform: 'translateY(-50%)' }}>
-                  <line x1="0" y1="12" x2="85" y2="-36" stroke="#0891b2" strokeWidth="1" opacity="0.4" strokeDasharray="2,2" />
+                <svg className="absolute left-full top-1/2 h-[320px] w-[420px]" style={{ transform: 'translateY(-82%)' }}>
+                  <line x1="0" y1="286" x2="330" y2="76" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
                 </svg>
-                
+
                 {/* Metric card */}
                 <div className="rounded-xl border border-blue-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
                   <div className="text-xs font-medium text-gray-600">Contributors</div>
@@ -129,10 +164,10 @@ export function Hero() {
             <div className="absolute bottom-12 right-8">
               <div className="group relative">
                 {/* Pointer line */}
-                <svg className="absolute right-full top-1/2 h-24 w-24" style={{ transform: 'translateY(-50%)' }}>
-                  <line x1="96" y1="12" x2="10" y2="-30" stroke="#0891b2" strokeWidth="1" opacity="0.4" strokeDasharray="2,2" />
+                <svg className="absolute right-full top-1/2 h-[320px] w-[420px]" style={{ transform: 'translateY(-82%)' }}>
+                  <line x1="420" y1="286" x2="90" y2="76" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
                 </svg>
-                
+
                 {/* Metric card */}
                 <div className="rounded-xl border border-orange-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
                   <div className="text-xs font-medium text-gray-600">Verified Recipients</div>
