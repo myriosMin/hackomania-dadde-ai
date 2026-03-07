@@ -1,5 +1,8 @@
 import { ArrowRight, Info } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useNavigate } from "react-router";
+
+const Globe = dynamic(() => import("react-globe.gl"), { ssr: false });
 
 export function Hero() {
   const navigate = useNavigate();
@@ -53,70 +56,22 @@ export function Hero() {
               <div className="relative h-full w-full">
                 {/* Glow effect */}
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-400/20 to-cyan-500/20 blur-3xl" />
-                
-                {/* Main globe */}
-                <svg className="h-full w-full" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
-                  <defs>
-                    {/* Globe gradient */}
-                    <radialGradient id="globeGradient" cx="35%" cy="35%">
-                      <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.3" />
-                      <stop offset="50%" stopColor="#0891b2" stopOpacity="0.5" />
-                      <stop offset="100%" stopColor="#0e7490" stopOpacity="0.7" />
-                    </radialGradient>
-                    
-                    {/* Continent pattern */}
-                    <pattern id="continents" x="0" y="0" width="400" height="400" patternUnits="userSpaceOnUse">
-                      <circle cx="200" cy="200" r="180" fill="url(#globeGradient)" />
-                    </pattern>
-                  </defs>
-                  
-                  {/* Globe base */}
-                  <circle cx="200" cy="200" r="180" fill="url(#globeGradient)" opacity="0.9" />
-                  
-                  {/* Latitude lines */}
-                  <ellipse cx="200" cy="200" rx="180" ry="180" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  <ellipse cx="200" cy="200" rx="180" ry="120" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  <ellipse cx="200" cy="200" rx="180" ry="60" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  
-                  {/* Longitude lines */}
-                  <ellipse cx="200" cy="200" rx="60" ry="180" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  <ellipse cx="200" cy="200" rx="120" ry="180" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  <line x1="200" y1="20" x2="200" y2="380" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-                  
-                  {/* Continent shapes (simplified) */}
-                  {/* Asia */}
-                  <path d="M 280 140 Q 300 160 290 190 Q 280 210 270 200 Q 250 180 260 160 Q 270 145 280 140 Z" 
-                        fill="#0891b2" opacity="0.6" />
-                  
-                  {/* Africa */}
-                  <path d="M 220 180 Q 230 200 225 230 Q 220 250 210 240 Q 200 220 205 200 Q 210 185 220 180 Z" 
-                        fill="#0891b2" opacity="0.6" />
-                  
-                  {/* North America */}
-                  <path d="M 120 120 Q 140 130 135 160 Q 130 180 115 175 Q 100 160 105 140 Q 110 125 120 120 Z" 
-                        fill="#0891b2" opacity="0.6" />
-                  
-                  {/* South America */}
-                  <path d="M 140 220 Q 150 240 145 270 Q 140 285 130 275 Q 125 255 130 235 Q 135 222 140 220 Z" 
-                        fill="#0891b2" opacity="0.6" />
-                  
-                  {/* Active hotspots (pulsing dots) */}
-                  <circle cx="290" cy="170" r="4" fill="#f97316" opacity="0.8">
-                    <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                  <circle cx="220" cy="210" r="4" fill="#f97316" opacity="0.8">
-                    <animate attributeName="r" values="4;6;4" dur="2s" begin="0.5s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" begin="0.5s" repeatCount="indefinite" />
-                  </circle>
-                  <circle cx="130" cy="150" r="4" fill="#f97316" opacity="0.8">
-                    <animate attributeName="r" values="4;6;4" dur="2s" begin="1s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" begin="1s" repeatCount="indefinite" />
-                  </circle>
-                  
-                  {/* Highlight ring */}
-                  <circle cx="200" cy="200" r="180" fill="none" stroke="url(#globeGradient)" strokeWidth="2" opacity="0.4" />
-                </svg>
+
+                {/* Main globe (clouds variant) */}
+                <div className="relative z-10 h-full w-full">
+                  <Globe
+                    width={320}
+                    height={320}
+                    backgroundColor="rgba(0,0,0,0)"
+                    globeImageUrl="https://unpkg.com/three-globe/example/img/earth-clouds.png"
+                    showAtmosphere
+                    atmosphereColor="#22d3ee"
+                    atmosphereAltitude={0.16}
+                    enablePointerInteraction={false}
+                    autoRotate
+                    autoRotateSpeed={0.45}
+                  />
+                </div>
               </div>
             </div>
             
