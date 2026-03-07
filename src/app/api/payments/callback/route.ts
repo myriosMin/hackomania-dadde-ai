@@ -21,7 +21,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { completeContribution, getPendingGrant, deletePendingGrant } from "@/lib/open-payments";
+import {
+  completeContribution,
+  completePayout,
+  completeSubscription,
+  getPendingState,
+  deletePendingGrant,
+} from "@/lib/open-payments";
 import { chWrite } from "@/lib/clickhouse";
 
 export const runtime = "nodejs";
@@ -57,7 +63,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ── Look up pending grant state ───────────────────────────────────────────
+  // ── Look up pending state ─────────────────────────────────────────────────
   if (!stateKey) {
     console.error("[Callback] Missing state parameter");
     return NextResponse.redirect(
@@ -65,28 +71,63 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const pendingGrant = getPendingGrant(stateKey);
-  if (!pendingGrant) {
-    console.error("[Callback] No pending grant found for state:", stateKey);
+  const pendingState = getPendingState(stateKey);
+  if (!pendingState) {
+    console.error("[Callback] No pending state found for state:", stateKey);
     return NextResponse.redirect(
       new URL(`${returnUrl}?status=error&message=Grant+session+expired.+Please+try+again.`, req.url),
     );
   }
-  console.log("[Callback] Found pending grant:", { ...pendingGrant, continueToken: "***" });
+  console.log("[Callback] Found pending state type:", pendingState.type, "state:", stateKey);
 
-  // ── Complete contribution ─────────────────────────────────────────────────
+  // ── Complete contribution or payout ───────────────────────────────────────
   try {
-    const { paymentId } = await completeContribution({
-      senderWalletAddress: pendingGrant.senderWalletAddress,
-      continueToken: pendingGrant.continueToken,
-      continueUri: pendingGrant.continueUri,
-      interactRef: interactRef!,
-      incomingPaymentUrl: pendingGrant.incomingPaymentUrl,
-      amount: pendingGrant.amount,
-      assetCode: pendingGrant.assetCode,
-      assetScale: pendingGrant.assetScale,
-      disasterEventId: pendingGrant.disasterEventId,
-    });
+    let paymentId: string;
+
+    if (pendingState.type === "PAYOUT") {
+      const result = await completePayout({
+        continueToken: pendingState.continueToken,
+        continueUri: pendingState.continueUri,
+        interactRef: interactRef!,
+        quoteId: pendingState.quoteId,
+        collectorResourceServer: pendingState.collectorResourceServer,
+        collectorWalletId: pendingState.collectorWalletId,
+        receiverIncomingUrl: pendingState.receiverIncomingUrl,
+        receiverIncomingAccessToken: pendingState.receiverIncomingAccessToken,
+        claimId: pendingState.claimId,
+        disasterEventId: pendingState.disasterEventId,
+        collectorAddress: pendingState.collectorAddress,
+        receiverAddress: pendingState.receiverAddress,
+        debitAmount: pendingState.debitAmount,
+      });
+      paymentId = result.paymentId;
+    } else if (pendingState.type === "SUBSCRIPTION") {
+      const result = await completeSubscription({
+        senderWalletAddress: pendingState.senderWalletAddress,
+        continueToken: pendingState.continueToken,
+        continueUri: pendingState.continueUri,
+        interactRef: interactRef!,
+        incomingPaymentUrl: pendingState.incomingPaymentUrl,
+        pledgeAmount: pendingState.pledgeAmount,
+        assetCode: pendingState.assetCode,
+        assetScale: pendingState.assetScale,
+        interval: pendingState.interval,
+      });
+      paymentId = result.paymentId;
+    } else {
+      const result = await completeContribution({
+        senderWalletAddress: pendingState.senderWalletAddress,
+        continueToken: pendingState.continueToken,
+        continueUri: pendingState.continueUri,
+        interactRef: interactRef!,
+        incomingPaymentUrl: pendingState.incomingPaymentUrl,
+        amount: pendingState.amount,
+        assetCode: pendingState.assetCode,
+        assetScale: pendingState.assetScale,
+        disasterEventId: pendingState.disasterEventId,
+      });
+      paymentId = result.paymentId;
+    }
 
     // Clean up the pending grant
     deletePendingGrant(stateKey);
@@ -96,16 +137,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(successUrl);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[Callback] completeContribution error:", err);
+    console.error("[Callback] complete payment error:", err);
 
     await chWrite("INSERT INTO events_log", [
       {
         event_type: "ERROR",
         service: "payments",
         payload: JSON.stringify({
-          action: "complete_contribution",
-          sender_wallet: pendingGrant.senderWalletAddress,
-          amount: pendingGrant.amount,
+          action: pendingState.type === "PAYOUT" ? "complete_payout" : "complete_contribution",
+          state: stateKey,
         }),
         error: message,
       },

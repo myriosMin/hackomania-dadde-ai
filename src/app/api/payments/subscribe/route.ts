@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const interval = body.interval ?? defaultInterval();
 
   const fieldErrors: string[] = [];
-  if (!senderWalletAddress) fieldErrors.push("senderWalletAddress is required");
+  // senderWalletAddress is optional — defaults to SENDER_WALLET_ADDRESS env var
   if (!pledgeAmount) fieldErrors.push("pledgeAmount is required");
   if (!assetCode) fieldErrors.push("assetCode is required");
   if (assetScale === undefined || assetScale === null) fieldErrors.push("assetScale is required");
@@ -80,14 +80,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ errors: fieldErrors }, { status: 400 });
   }
 
-  // Validate wallet address format
-  try {
-    new URL(senderWalletAddress!);
-  } catch {
-    return NextResponse.json(
-      { error: "senderWalletAddress must be a valid URL" },
-      { status: 400 },
-    );
+  // Validate wallet address format only if provided
+  if (senderWalletAddress) {
+    try {
+      new URL(senderWalletAddress);
+    } catch {
+      return NextResponse.json(
+        { error: "senderWalletAddress must be a valid URL" },
+        { status: 400 },
+      );
+    }
   }
 
   // Validate interval format (must start with R/ or be a valid ISO 8601 repeating interval)
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
   // ── Initiate Subscription ─────────────────────────────────────────────────
   try {
     const result = await initiateSubscription({
-      senderWalletAddress: senderWalletAddress!,
+      senderWalletAddress: senderWalletAddress ?? undefined,
       pledgeAmount: pledgeAmount!,
       assetCode: assetCode!,
       assetScale: assetScale!,
@@ -109,14 +111,15 @@ export async function POST(req: NextRequest) {
       redirectUrl: redirectUrl!,
     });
 
-    // Log the subscription initiation
-    await chWrite("INSERT INTO events_log", [
+    // Fire-and-forget — return the redirect URL immediately, log in background
+    const resolvedSender = senderWalletAddress ?? process.env.SENDER_WALLET_ADDRESS ?? "unknown";
+    chWrite("INSERT INTO events_log", [
       {
         event_type: "API_CALL",
         service: "payments",
         payload: JSON.stringify({
           action: "initiate_subscription",
-          sender_wallet_hash: hashWalletAddress(senderWalletAddress!),
+          sender_wallet_hash: hashWalletAddress(resolvedSender),
           pledge_amount: pledgeAmount,
           asset_code: assetCode,
           interval,
@@ -125,13 +128,12 @@ export async function POST(req: NextRequest) {
       },
     ]).catch(console.error);
 
-    // Log pending subscription as a transaction record
-    await chWrite("INSERT INTO transactions", [
+    chWrite("INSERT INTO transactions", [
       {
         type: "SUBSCRIPTION",
         amount: Number(pledgeAmount) / Math.pow(10, assetScale!),
         currency: assetCode,
-        sender_wallet_hash: hashWalletAddress(senderWalletAddress!),
+        sender_wallet_hash: hashWalletAddress(resolvedSender),
         recipient_wallet_hash: hashWalletAddress(process.env.OPEN_PAYMENTS_WALLET_ADDRESS ?? "fund"),
         disaster_event_id: null,
         open_payments_payment_id: null,
