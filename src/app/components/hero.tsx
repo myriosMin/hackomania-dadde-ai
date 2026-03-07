@@ -1,9 +1,9 @@
- "use client";
+"use client";
 
 import { ArrowRight, Info } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useNavigate } from "react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type GlobeMaterial = {
   color: { set: (value: string) => void };
@@ -12,37 +12,251 @@ type GlobeMaterial = {
   shininess: number;
 };
 
+type GlobeControls = {
+  autoRotate: boolean;
+  enableZoom: boolean;
+  enablePan: boolean;
+  rotateSpeed: number;
+  addEventListener: (type: "change", callback: () => void) => void;
+  removeEventListener: (type: "change", callback: () => void) => void;
+};
+
+type GlobePointOfView = {
+  lat: number;
+  lng: number;
+  altitude: number;
+};
+
 type GlobeInstance = {
   globeMaterial: () => GlobeMaterial | null;
+  controls: () => GlobeControls;
+  pointOfView: () => GlobePointOfView;
+};
+
+type CountryFeature = {
+  properties?: Record<string, unknown>;
+  geometry?: unknown;
+};
+
+type WorldGeoJson = {
+  features?: CountryFeature[];
+};
+
+type DisasterCampaign = {
+  disasterName: string;
+  country: string;
+  location: string;
+  disasterType: string;
+  amountRaised: string;
+  donors: string;
+  progress: number;
+  lat: number;
+  lng: number;
+};
+
+const GLOBE_SIZE = 480;
+
+const WORLD_GEOJSON_URL =
+  "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson";
+
+const DISASTER_CAMPAIGNS: DisasterCampaign[] = [
+  {
+    disasterName: "Mindanao Flood Recovery",
+    country: "Philippines",
+    location: "Mindanao, Philippines",
+    disasterType: "Flood",
+    amountRaised: "$184,200",
+    donors: "2,914",
+    progress: 0.72,
+    lat: 7.1907,
+    lng: 125.4553,
+  },
+  {
+    disasterName: "Noto Earthquake Relief",
+    country: "Japan",
+    location: "Ishikawa, Japan",
+    disasterType: "Earthquake",
+    amountRaised: "$262,400",
+    donors: "3,801",
+    progress: 0.81,
+    lat: 37.5,
+    lng: 137.3,
+  },
+  {
+    disasterName: "Sulawesi Quake Support",
+    country: "Indonesia",
+    location: "Central Sulawesi, Indonesia",
+    disasterType: "Earthquake",
+    amountRaised: "$129,100",
+    donors: "1,987",
+    progress: 0.56,
+    lat: -1.4303,
+    lng: 121.4456,
+  },
+  {
+    disasterName: "Anatolia Reconstruction",
+    country: "Turkey",
+    location: "Gaziantep, Turkey",
+    disasterType: "Earthquake",
+    amountRaised: "$341,900",
+    donors: "4,622",
+    progress: 0.87,
+    lat: 37.0662,
+    lng: 37.3833,
+  },
+];
+
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  turkey: ["turkiye", "republicofturkiye"],
+  philippines: ["republicofthephilippines"],
 };
 
 const Globe = dynamic(() => import("react-globe.gl").then((m) => m.default), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[320px] w-[320px] items-center justify-center rounded-full border border-teal-200 bg-white/60 text-sm text-gray-500">
+    <div className="flex h-[480px] w-[480px] items-center justify-center rounded-full border border-teal-200 bg-white/60 text-sm text-gray-500">
       Loading globe...
     </div>
   ),
 });
 
+function normalizeCountryName(value: string) {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function getCountryName(feature: CountryFeature) {
+  const props = feature.properties ?? {};
+  const options = [
+    props.name,
+    props.NAME,
+    props.NAME_EN,
+    props.ADMIN,
+    props.NAME_LONG,
+    props.sovereignt,
+  ];
+
+  const match = options.find((entry): entry is string => typeof entry === "string" && entry.length > 0);
+  return match ?? "";
+}
+
+function angularDistance(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+
+  const hav =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  return 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+}
+
+function findNearestDisaster(lat: number, lng: number) {
+  let nearest = DISASTER_CAMPAIGNS[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  DISASTER_CAMPAIGNS.forEach((campaign) => {
+    const distance = angularDistance(lat, lng, campaign.lat, campaign.lng);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      nearest = campaign;
+    }
+  });
+
+  return nearest;
+}
+
 export function Hero() {
   const navigate = useNavigate();
   const globeRef = useRef<GlobeInstance | null>(null);
+  const [countryFeatures, setCountryFeatures] = useState<CountryFeature[]>([]);
+  const [activeDisaster, setActiveDisaster] = useState<DisasterCampaign>(DISASTER_CAMPAIGNS[0]);
+  const [globeReady, setGlobeReady] = useState(false);
 
   useEffect(() => {
-    // Fallback styling so the globe remains visible even if texture URL fails.
-    if (!globeRef.current) return;
-    const material = globeRef.current.globeMaterial();
-    if (!material) return;
-    material.color.set("#0f172a");
-    material.emissive.set("#0ea5e9");
-    material.emissiveIntensity = 0.2;
-    material.shininess = 0.9;
+    let cancelled = false;
+
+    fetch(WORLD_GEOJSON_URL)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch country polygons: ${response.status}`);
+        }
+        return response.json() as Promise<WorldGeoJson>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const features = Array.isArray(data.features) ? data.features : [];
+        setCountryFeatures(features);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCountryFeatures([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!globeReady || !globeRef.current) return;
+
+    const controls = globeRef.current.controls();
+
+    controls.autoRotate = false;
+    controls.enableZoom = false;
+    controls.enablePan = false;
+    controls.rotateSpeed = 0.6;
+
+    const material = globeRef.current.globeMaterial();
+    if (material) {
+      material.color.set("#082f49");
+      material.emissive.set("#0e7490");
+      material.emissiveIntensity = 0.16;
+      material.shininess = 0.75;
+    }
+
+    const updateNearest = () => {
+      const pov = globeRef.current?.pointOfView();
+      if (!pov) return;
+
+      const nearest = findNearestDisaster(pov.lat, pov.lng);
+      setActiveDisaster((current) => {
+        if (current.disasterName === nearest.disasterName) return current;
+        return nearest;
+      });
+    };
+
+    updateNearest();
+    controls.addEventListener("change", updateNearest);
+
+    return () => {
+      controls.removeEventListener("change", updateNearest);
+    };
+  }, [globeReady]);
+
+  const highlightedCountry = useMemo(
+    () => normalizeCountryName(activeDisaster.country),
+    [activeDisaster.country],
+  );
+
+  const highlightedCountryAliases = useMemo(() => {
+    const aliases = COUNTRY_ALIASES[highlightedCountry] ?? [];
+    return new Set([highlightedCountry, ...aliases]);
+  }, [highlightedCountry]);
+
+  const hexPolygonColor = (feature: CountryFeature) => {
+    const countryName = normalizeCountryName(getCountryName(feature));
+    if (!countryName) return "rgba(13, 148, 136, 0.18)";
+    if (highlightedCountryAliases.has(countryName)) return "rgba(56, 189, 248, 0.88)";
+    return "rgba(15, 118, 110, 0.24)";
+  };
 
   const handleDonateClick = () => {
     // Go directly to payment page - collective disaster fund
-    navigate('/payment/collective');
+    navigate("/payment/collective");
   };
 
   return (
@@ -57,7 +271,7 @@ export function Hero() {
             Give quickly, support trusted relief campaigns, and track impact transparently.
           </p>
           <div className="flex gap-4">
-            <button 
+            <button
               onClick={handleDonateClick}
               className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-6 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
             >
@@ -71,107 +285,101 @@ export function Hero() {
           </div>
           <div className="mt-6 flex items-center gap-2 text-sm text-gray-600">
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500"/>
-              <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500"/>
-              <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500"/>
+              <path
+                d="M12 2L2 7L12 12L22 7L12 2Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-teal-500"
+              />
+              <path
+                d="M2 17L12 22L22 17"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-teal-500"
+              />
+              <path
+                d="M2 12L12 17L22 12"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-teal-500"
+              />
             </svg>
-            <span>Powered by <span className="font-semibold text-teal-600">Interledger</span></span>
+            <span>
+              Powered by <span className="font-semibold text-teal-600">Interledger</span>
+            </span>
           </div>
         </div>
-        
-        {/* Right side - 3D Globe with Metrics */}
+
+        {/* Right side - Interactive Globe */}
         <div className="relative flex items-center justify-center">
-          {/* Globe Container */}
-          <div className="relative h-[1500px] w-[1500px]">
-            {/* Globe */}
-            <div className="absolute left-1/2 top-1/2 h-[960px] w-[960px] -translate-x-1/2 -translate-y-1/2">
-              {/* Globe sphere with gradient and glow */}
+          <div className="relative h-[560px] w-[560px]">
+            <div className="absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2">
               <div className="relative h-full w-full">
-                {/* Glow effect */}
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-400/20 to-cyan-500/20 blur-3xl" />
 
-                {/* Main globe (clouds variant) */}
                 <div className="relative z-10 h-full w-full">
                   <Globe
                     ref={globeRef}
-                    width={960}
-                    height={960}
+                    width={GLOBE_SIZE}
+                    height={GLOBE_SIZE}
                     backgroundColor="rgba(0,0,0,0)"
-                    globeImageUrl="https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg"
                     waitForGlobeReady={false}
                     showAtmosphere
-                    atmosphereColor="#22d3ee"
-                    atmosphereAltitude={0.16}
-                    enablePointerInteraction={false}
-                    autoRotate
-                    autoRotateSpeed={0.45}
+                    atmosphereColor="#67e8f9"
+                    atmosphereAltitude={0.11}
+                    hexPolygonsData={countryFeatures}
+                    hexPolygonResolution={3}
+                    hexPolygonMargin={0.35}
+                    hexPolygonUseDots
+                    hexPolygonColor={hexPolygonColor}
+                    pointsData={[activeDisaster]}
+                    pointLat="lat"
+                    pointLng="lng"
+                    pointColor={() => "#fb923c"}
+                    pointAltitude={0.02}
+                    pointRadius={0.45}
+                    htmlElementsData={[activeDisaster]}
+                    htmlLat="lat"
+                    htmlLng="lng"
+                    htmlElement={(item: object) => {
+                      const disaster = item as DisasterCampaign;
+                      const card = document.createElement("div");
+                      const progress = Math.round(disaster.progress * 100);
+
+                      card.style.pointerEvents = "none";
+                      card.style.transform = "translate(-50%, -108%)";
+
+                      card.innerHTML = `
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+                          <div style="width:2px;height:18px;background:#06b6d4;opacity:0.8;"></div>
+                          <div style="min-width:240px;max-width:260px;border:1px solid #99f6e4;border-radius:12px;background:rgba(255,255,255,0.96);padding:10px 12px;box-shadow:0 12px 24px rgba(0,0,0,0.12);font-family:ui-sans-serif,system-ui,sans-serif;color:#0f172a;">
+                            <div style="font-size:13px;font-weight:700;color:#0f766e;margin-bottom:8px;">${disaster.disasterName}</div>
+                            <div style="font-size:11px;line-height:1.45;color:#334155;">Location: ${disaster.location}</div>
+                            <div style="font-size:11px;line-height:1.45;color:#334155;">Disaster type: ${disaster.disasterType}</div>
+                            <div style="font-size:11px;line-height:1.45;color:#334155;">Amount raised: ${disaster.amountRaised}</div>
+                            <div style="font-size:11px;line-height:1.45;color:#334155;">Number of donors: ${disaster.donors}</div>
+                            <div style="margin-top:8px;">
+                              <div style="height:6px;width:100%;overflow:hidden;border-radius:999px;background:#ccfbf1;">
+                                <div style="height:100%;width:${progress}%;background:linear-gradient(90deg,#14b8a6,#06b6d4);"></div>
+                              </div>
+                              <div style="margin-top:4px;font-size:10px;color:#0f766e;">${progress}% funded</div>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+
+                      return card;
+                    }}
+                    onGlobeReady={() => {
+                      setGlobeReady(true);
+                    }}
                   />
-                </div>
-              </div>
-            </div>
-            
-            {/* Floating Metric Callouts */}
-            
-            {/* Top Left - Active Campaigns */}
-            <div className="absolute left-0 top-12">
-              <div className="group relative">
-                {/* Pointer line */}
-                <svg className="absolute left-full top-1/2 h-[300px] w-[420px]" style={{ transform: 'translateY(-12%)' }}>
-                  <line x1="0" y1="20" x2="340" y2="238" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
-                </svg>
-
-                {/* Metric card */}
-                <div className="rounded-xl border border-teal-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
-                  <div className="text-xs font-medium text-gray-600">Active Campaigns</div>
-                  <div className="text-2xl font-bold text-teal-600">24</div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Top Right - Available Funds */}
-            <div className="absolute right-0 top-20">
-              <div className="group relative">
-                {/* Pointer line */}
-                <svg className="absolute right-full top-1/2 h-[300px] w-[420px]" style={{ transform: 'translateY(-12%)' }}>
-                  <line x1="420" y1="20" x2="80" y2="238" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
-                </svg>
-
-                {/* Metric card */}
-                <div className="rounded-xl border border-cyan-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
-                  <div className="text-xs font-medium text-gray-600">Funds Available</div>
-                  <div className="text-2xl font-bold text-cyan-600">$2.4M</div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Bottom Left - Contributors */}
-            <div className="absolute bottom-20 left-4">
-              <div className="group relative">
-                {/* Pointer line */}
-                <svg className="absolute left-full top-1/2 h-[320px] w-[420px]" style={{ transform: 'translateY(-82%)' }}>
-                  <line x1="0" y1="286" x2="330" y2="76" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
-                </svg>
-
-                {/* Metric card */}
-                <div className="rounded-xl border border-blue-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
-                  <div className="text-xs font-medium text-gray-600">Contributors</div>
-                  <div className="text-2xl font-bold text-blue-600">12.8K</div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Bottom Right - Verified Recipients */}
-            <div className="absolute bottom-12 right-8">
-              <div className="group relative">
-                {/* Pointer line */}
-                <svg className="absolute right-full top-1/2 h-[320px] w-[420px]" style={{ transform: 'translateY(-82%)' }}>
-                  <line x1="420" y1="286" x2="90" y2="76" stroke="#0891b2" strokeWidth="2.5" opacity="0.65" strokeDasharray="4,4" strokeLinecap="round" />
-                </svg>
-
-                {/* Metric card */}
-                <div className="rounded-xl border border-orange-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-sm transition-all hover:shadow-xl">
-                  <div className="text-xs font-medium text-gray-600">Verified Recipients</div>
-                  <div className="text-2xl font-bold text-orange-600">147</div>
                 </div>
               </div>
             </div>
