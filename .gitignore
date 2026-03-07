@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+vendor-UI/dist/
 
 # misc
 .DS_Store
