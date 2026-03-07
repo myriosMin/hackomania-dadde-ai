@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams, Link, useNavigate } from "react-router";
+import { useSearchParams, Link } from "react-router";
 import { ChevronLeft, CreditCard, Wallet, Building2, CircleDollarSign, Shield, ExternalLink } from "lucide-react";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { products } from "./Storefront";
@@ -8,7 +8,6 @@ type PaymentMethod = "card" | "paypal" | "bank" | "open-payments";
 
 export function Checkout() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const productId = searchParams.get("productId");
   const product = products.find(p => p.id === Number(productId));
 
@@ -79,11 +78,6 @@ export function Checkout() {
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error ?? data.detail ?? "Failed to initiate split payment");
-        }
-
-        if (data.completed) {
-          navigate(`/order-complete?productId=${productId}&amount=${total.toFixed(2)}&roundUp=${roundUpEnabled}`);
-          return;
         }
 
         if (data.redirectUrl) {
