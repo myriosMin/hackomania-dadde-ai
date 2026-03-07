@@ -1,6 +1,6 @@
 # Dadde's Fund: AI-Mediated Decentralized Community Aid (PRD)
 
-This Product Requirements Document is designed explicitly for an **AI Developer Agent** to implement the HackOMania hackathon winning project. The architecture is scoped to maximize the judging rubric (Impact 30%, Relevance 15%, Complexity 20%, Execution 35%) plus the ClickHouse special challenge rubric (Effective Use 35pts, Architecture 25pts, Innovation 20pts) by utilizing **Interledger Open Payments**, **ClickHouse**, and **Gemini 2.0 Flash** multimodal AI.
+This Product Requirements Document is designed explicitly for an **AI Developer Agent** to implement the HackOMania hackathon winning project. The architecture is scoped to maximize the judging rubric (Impact 30%, Relevance 15%, Complexity 20%, Execution 35%) plus the ClickHouse special challenge rubric (Effective Use 35pts, Architecture 25pts, Innovation 20pts) by utilizing **Interledger Open Payments**, **ClickHouse**, and **Gemini 2.5 Flash** multimodal AI.
 
 ---
 
@@ -11,7 +11,7 @@ Build a working, end-to-end prototype of a digital ROSCA (community emergency fu
 1. Collects continuous micro-contributions via **Open Payments** (direct donations, subscription pledges, vendor round-ups).
 2. Detects disaster events and identifies affected communities.
 3. Evaluates emergency claims using a dual-AI verification pipeline (Recommendation Agent + Critic Agent) against **community-voted rules and thresholds** — the AI never sets thresholds or makes decisions, only advises.
-4. Logs all AI reasoning transparently to **ClickHouse** as an immutable, anonymized audit trail.
+4. Logs all AI reasoning transparently to **ClickHouse** & **LangFuse** as an immutable, anonymized audit trail.
 5. Requires **human-in-the-loop approval** before any payout executes.
 6. Triggers instant payouts via **Open Payments** with proper IDP authorization redirect flow.
 7. Displays a real-time transparency dashboard (powered by ClickHouse Materialized Views) showing fund health, impact metrics, and AI decision ratios — all with **recipient anonymization**.
@@ -26,8 +26,8 @@ Build a working, end-to-end prototype of a digital ROSCA (community emergency fu
 |------|--------|------|
 | 1 | Donor A contributes $5.00 via Open Payments wallet. IDP redirect confirms consent, then redirects back to platform. Transaction visible in test wallet. | Open Payments SDK + IDP redirect |
 | 2 | A disaster strikes. User B uploads a photo of property damage + a short text claim via the mobile-first claim form. | Next.js frontend |
-| 3 | **AI Recommendation Agent** (Gemini 2.0 Flash) evaluates multimodal input against community-defined rules. Outputs structured JSON verdict. | Gemini 2.0 Flash API |
-| 4 | **AI Critic Agent** reviews the Recommendation Agent's output for errors, bias, or hallucinations. Outputs a validation report. Both are logged to ClickHouse. | Gemini 2.0 Flash API + ClickHouse |
+| 3 | **AI Recommendation Agent** (Gemini 2.5 Flash) evaluates multimodal input against community-defined rules. Outputs structured JSON verdict. | Gemini 2.5 Flash API |
+| 4 | **AI Critic Agent** reviews the Recommendation Agent's output for errors, bias, or hallucinations. Outputs a validation report. Both are logged to ClickHouse. | Gemini 2.5 Flash API + ClickHouse |
 | 5 | A Collector/Admin reviews the AI recommendation + critic report and **manually approves** the payout. | Platform admin UI |
 | 6 | System executes payout via Open Payments (grant → quote → outgoing payment) to User B's wallet. IDP authorization completes the flow. Transaction visible in test wallet. | Open Payments SDK |
 
@@ -127,7 +127,7 @@ Rules are **defined by the community through voting**, not by AI. Examples:
 
 > **Critical Design Decision:** The AI confidence threshold (e.g., 0.85) is a community-voted default stored in the rules table. The AI process never modifies it. The community can adjust it via the governance voting mechanism.
 
-### Layer 3: AI Recommendation Agent (Gemini 2.0 Flash)
+### Layer 3: AI Recommendation Agent (Gemini 2.5 Flash)
 Evaluates a claim (image + text) against the community-defined rules.
 - Input: Base64 image of disaster damage + textual claim description + community rule context.
 - Output (strict JSON):
@@ -142,7 +142,7 @@ Evaluates a claim (image + text) against the community-defined rules.
   ```
 - This is a **recommendation**, not a final decision.
 
-### Layer 4: AI Critic Agent (Gemini 2.0 Flash)
+### Layer 4: AI Critic Agent (Gemini 2.5 Flash)
 A second AI call that reviews the Recommendation Agent's output.
 - Checks for: logical errors, bias, hallucinated reasoning, inconsistencies with the image.
 - Output:
@@ -210,7 +210,7 @@ Community members (donors with active contributions) can vote on:
 |-------|-----------|
 | Frontend | Next.js (React), TailwindCSS, Recharts |
 | Backend API | Node.js + Express |
-| AI (Multimodal) | Gemini 2.0 Flash API (cheapest multimodal, sufficient for image+text) |
+| AI (Multimodal) | Gemini 2.5 Flash API (cheapest multimodal, sufficient for image+text) |
 | Database (Analytics + Audit) | ClickHouse (Cloud or Local) |
 | Payments | Interledger Open Payments SDK / Rafiki APIs |
 | Auth/Consent | Open Payments IDP redirect flow (test wallet) |
@@ -338,14 +338,14 @@ Default rules (seeded on first run):
 #### 5a. AI Recommendation Agent
 Create `services/aiRecommender.js`:
 - Few-shot prompt that intakes: Base64 image + text claim + current community rules (from Step 4).
-- Forces Gemini 2.0 Flash to output strict JSON (see Layer 3 format above).
+- Forces Gemini 2.5 Flash to output strict JSON (see Layer 3 format above).
 - Log full input/output to ClickHouse `ai_inferences` table with `agent_type = 'recommender'`.
 
 #### 5b. AI Critic Agent
 Create `services/aiCritic.js`:
 - Takes the Recommendation Agent's output + the original image + claim text.
 - Evaluates for: logical errors, bias, hallucinated reasoning, consistency with visual evidence.
-- Forces Gemini 2.0 Flash to output strict JSON (see Layer 4 format above).
+- Forces Gemini 2.5 Flash to output strict JSON (see Layer 4 format above).
 - Log full input/output to ClickHouse `ai_inferences` table with `agent_type = 'critic'`.
 
 **Error Handling:**
