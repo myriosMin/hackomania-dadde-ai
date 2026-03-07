@@ -55,6 +55,9 @@ agent/__pycache__/
 agent/.venv/
 .pycache/
 
+# generated mock data CSVs
+scripts/mock_data/
+
 # node dependencies
 node_modules/
 

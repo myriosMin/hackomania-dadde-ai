@@ -11,12 +11,16 @@ interface ServerConfig {
   // Gemini AI
   GEMINI_API_KEY: string;
 
-  // ClickHouse
-  CLICKHOUSE_HOST: string;
-  CLICKHOUSE_PORT: number;
+  // ClickHouse (Cloud or local)
+  CLICKHOUSE_URL: string;        // Full URL: https://abc.clickhouse.cloud:8443 or http://localhost:8123
   CLICKHOUSE_DATABASE: string;
   CLICKHOUSE_USERNAME: string;
   CLICKHOUSE_PASSWORD: string;
+
+  // Supabase (user data, auth)
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
 
   // Open Payments
   OPEN_PAYMENTS_WALLET_ADDRESS: string;
@@ -31,13 +35,14 @@ interface ServerConfig {
 
 const REQUIRED: (keyof ServerConfig)[] = [
   "GEMINI_API_KEY",
-  "CLICKHOUSE_HOST",
+  "CLICKHOUSE_URL",
   "CLICKHOUSE_DATABASE",
   "CLICKHOUSE_USERNAME",
   "CLICKHOUSE_PASSWORD",
-  "OPEN_PAYMENTS_WALLET_ADDRESS",
-  "OPEN_PAYMENTS_KEY_ID",
-  "OPEN_PAYMENTS_PRIVATE_KEY",
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  // Open Payments keys are optional until Step 3 implementation
 ];
 
 function buildConfig(): ServerConfig {
@@ -48,6 +53,11 @@ function buildConfig(): ServerConfig {
     process.env.CI === "true";
 
   if (!isBuild) {
+    // Accept both GEMINI_API_KEY and GOOGLE_API_KEY (Google's convention)
+    if (!process.env.GEMINI_API_KEY && process.env.GOOGLE_API_KEY) {
+      process.env.GEMINI_API_KEY = process.env.GOOGLE_API_KEY;
+    }
+
     const missing = REQUIRED.filter((k) => !process.env[k]);
     if (missing.length > 0) {
       console.error(
@@ -61,13 +71,18 @@ function buildConfig(): ServerConfig {
   }
 
   return {
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "",
 
-    CLICKHOUSE_HOST: process.env.CLICKHOUSE_HOST ?? "localhost",
-    CLICKHOUSE_PORT: parseInt(process.env.CLICKHOUSE_PORT ?? "8123", 10),
+    // ClickHouse — accepts full URL (e.g. https://abc.clickhouse.cloud:8443)
+    CLICKHOUSE_URL: process.env.CLICKHOUSE_URL ?? "http://localhost:8123",
     CLICKHOUSE_DATABASE: process.env.CLICKHOUSE_DATABASE ?? "daddes_fund",
     CLICKHOUSE_USERNAME: process.env.CLICKHOUSE_USERNAME ?? "default",
     CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD ?? "",
+
+    // Supabase
+    SUPABASE_URL: process.env.SUPABASE_URL ?? "",
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ?? "",
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
 
     OPEN_PAYMENTS_WALLET_ADDRESS:
       process.env.OPEN_PAYMENTS_WALLET_ADDRESS ?? "",
