@@ -8,6 +8,11 @@ export function OrderComplete() {
   const productId = searchParams.get("productId");
   const amount = searchParams.get("amount");
   const roundUp = searchParams.get("roundUp") === "true";
+  const vendorAmount = searchParams.get("vendorAmount");
+  const roundUpAmountParam = searchParams.get("roundUpAmount");
+  const walletAddress = searchParams.get("walletAddress");
+  const vendorPaymentId = searchParams.get("vendor_payment_id");
+  const communityPaymentId = searchParams.get("community_payment_id");
   
   const product = products.find(p => p.id === Number(productId));
   
@@ -33,7 +38,11 @@ export function OrderComplete() {
   
   const subtotal = product.price;
   const shipping = 4.99;
-  const roundUpAmount = roundUp ? parseFloat((Math.ceil((subtotal + shipping) * 10) / 10 - (subtotal + shipping)).toFixed(2)) : 0;
+  const roundUpAmount = roundUpAmountParam
+    ? Number(roundUpAmountParam)
+    : roundUp
+      ? parseFloat((Math.ceil((subtotal + shipping) * 10) / 10 - (subtotal + shipping)).toFixed(2))
+      : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -149,6 +158,39 @@ export function OrderComplete() {
                 <span className="text-gray-600">Payment Method</span>
                 <span className="font-medium text-gray-900">Open Payments</span>
               </div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-sm">
+              {vendorAmount && (
+                <div className="flex justify-between text-gray-700">
+                  <span>To Vendor Wallet</span>
+                  <span className="font-medium">${vendorAmount}</span>
+                </div>
+              )}
+              {roundUp && roundUpAmount > 0 && (
+                <div className="flex justify-between text-blue-600">
+                  <span>To Community Fund</span>
+                  <span className="font-medium">${roundUpAmount.toFixed(2)}</span>
+                </div>
+              )}
+              {vendorPaymentId && (
+                <div className="flex justify-between items-start text-gray-700">
+                  <span>Vendor Payment ID</span>
+                  <span className="font-medium text-right break-all max-w-[60%]">{vendorPaymentId}</span>
+                </div>
+              )}
+              {communityPaymentId && (
+                <div className="flex justify-between items-start text-gray-700">
+                  <span>Community Payment ID</span>
+                  <span className="font-medium text-right break-all max-w-[60%]">{communityPaymentId}</span>
+                </div>
+              )}
+              {walletAddress && (
+                <div className="flex justify-between items-start text-gray-700">
+                  <span>Customer Wallet</span>
+                  <span className="font-medium text-right break-all max-w-[60%]">{walletAddress}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

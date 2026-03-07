@@ -15,6 +15,9 @@ export function Checkout() {
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
   const [roundUpEnabled, setRoundUpEnabled] = useState(false);
   const [walletAddress, setWalletAddress] = useState("");
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!product) {
     return (
@@ -31,13 +34,69 @@ export function Checkout() {
 
   const subtotal = product.price;
   const shipping = 4.99;
+  const vendorAmount = subtotal + shipping;
   const roundUpAmount = roundUpEnabled ? parseFloat((Math.ceil((subtotal + shipping) * 10) / 10 - (subtotal + shipping)).toFixed(2)) : 0;
   const total = subtotal + shipping + roundUpAmount;
 
-  const handleConfirmPayment = () => {
+  const apiBase = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? "";
+
+  const toBaseUnits = (value: string, scale = 2): string => {
+    const num = Number(value);
+    return String(Math.round(num * Math.pow(10, scale)));
+  };
+
+  const handleConfirmPayment = async () => {
     if (selectedPayment === "open-payments") {
-      // Redirect to verification page with order details
-      navigate(`/verification?productId=${productId}&roundUp=${roundUpEnabled}&amount=${total.toFixed(2)}&walletAddress=${walletAddress}`);
+      const trimmedWallet = walletAddress.trim();
+      if (!trimmedWallet) {
+        setWalletError("Please enter your Open Payments wallet address.");
+        return;
+      }
+      setWalletError(null);
+      setPaymentError(null);
+      setIsSubmitting(true);
+      try {
+        const baseReturnUrl = new URL(`${window.location.origin}/order-complete`);
+        baseReturnUrl.searchParams.set("productId", productId ?? "");
+        baseReturnUrl.searchParams.set("amount", total.toFixed(2));
+        baseReturnUrl.searchParams.set("roundUp", String(roundUpEnabled));
+        baseReturnUrl.searchParams.set("vendorAmount", vendorAmount.toFixed(2));
+        baseReturnUrl.searchParams.set("roundUpAmount", roundUpAmount.toFixed(2));
+        baseReturnUrl.searchParams.set("walletAddress", trimmedWallet);
+
+        const res = await fetch(`${apiBase}/api/payments/split/contribute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerWalletAddress: trimmedWallet,
+            vendorAmount: toBaseUnits(vendorAmount.toFixed(2), 2),
+            communityAmount: toBaseUnits(roundUpAmount.toFixed(2), 2),
+            redirectUrl: baseReturnUrl.toString(),
+            orderId: productId ? `product-${productId}` : "checkout-order",
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error ?? data.detail ?? "Failed to initiate split payment");
+        }
+
+        if (data.completed) {
+          navigate(`/order-complete?productId=${productId}&amount=${total.toFixed(2)}&roundUp=${roundUpEnabled}`);
+          return;
+        }
+
+        if (data.redirectUrl) {
+          window.location.href = data.redirectUrl;
+          return;
+        }
+
+        throw new Error("Split payment did not return a redirect URL");
+      } catch (e) {
+        setPaymentError(e instanceof Error ? e.message : "Unexpected payment error");
+      } finally {
+        setIsSubmitting(false);
+      }
     } else {
       // Handle other payment methods (could add similar flows)
       alert("Payment processing for " + selectedPayment);
@@ -186,10 +245,16 @@ export function Checkout() {
                     <input
                       type="text"
                       value={walletAddress}
-                      onChange={(e) => setWalletAddress(e.target.value)}
+                      onChange={(e) => {
+                        setWalletAddress(e.target.value);
+                        if (walletError) setWalletError(null);
+                      }}
                       placeholder="Enter your Open Payments wallet address"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none text-sm"
                     />
+                    {walletError && (
+                      <p className="mt-2 text-xs text-red-600">{walletError}</p>
+                    )}
                   </div>
 
                   {/* Learn More Link */}
@@ -261,8 +326,11 @@ export function Checkout() {
               onClick={handleConfirmPayment}
               className="w-full mt-6 bg-gray-900 text-white py-3 px-4 rounded-lg hover:bg-gray-800 transition-colors font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              {selectedPayment ? "Confirm Payment" : "Select Payment Method"}
+              {isSubmitting ? "Redirecting to wallet approval..." : selectedPayment ? "Confirm Payment" : "Select Payment Method"}
             </button>
+            {paymentError && (
+              <p className="mt-3 text-sm text-red-600">{paymentError}</p>
+            )}
           </div>
 
           {/* Right Column - Order Summary */}
