@@ -16,6 +16,8 @@ Build a working, end-to-end prototype of a digital ROSCA (community emergency fu
 6. Triggers instant payouts via **Open Payments** with proper IDP authorization redirect flow.
 7. Displays a real-time transparency dashboard (powered by ClickHouse Materialized Views) showing fund health, impact metrics, and AI decision ratios — all with **recipient anonymization**.
 
+Extra feature - There is a chat bubble where the user can ask it anything about Dadde's fund or manage its user preferences, where the agent can modify them using copilotkit frontend tools.
+
 ---
 
 ## 🏗 System Architecture & Golden Path Demo
@@ -208,8 +210,7 @@ Community members (donors with active contributions) can vote on:
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js (React), TailwindCSS, Recharts |
-| Backend API | Node.js + Express |
+| Frontend + API | Next.js (React) with Route Handlers, TailwindCSS, Recharts |
 | AI (Multimodal) | Gemini 2.5 Flash API (cheapest multimodal, sufficient for image+text) |
 | Database (Analytics + Audit) | ClickHouse (Cloud or Local) |
 | Payments | Interledger Open Payments SDK / Rafiki APIs |
@@ -223,24 +224,25 @@ Community members (donors with active contributions) can vote on:
 
 ---
 
-### Step 1: Project Scaffolding
+### Step 1: Project Scaffolding ✅
 
-- Initialize a monolithic repo with a `frontend` (Next.js) and `backend` (Express) folder.
-- Set up TailwindCSS in the frontend with a modern UI component library (shadcn/ui or similar).
-- Set up basic health-check routing in the Express backend.
-- Create a shared `config/` module for environment variables (API keys, ClickHouse connection, Open Payments wallet addresses).
+- Initialize a monolithic Next.js repo with API Route Handlers (no separate Express backend).
+- Set up TailwindCSS with shadcn/ui component library.
+- Set up a health-check route at `GET /api/health` returning status and version info.
+- Create a `src/lib/config.ts` module for server-side environment variable validation (API keys, ClickHouse connection, Open Payments wallet addresses).
+- Create `.env.example` with all required variable templates.
 
 **Error Handling:**
-- Health check endpoint should verify backend is live and return version info.
-- Environment variable validation on startup — fail fast with clear error messages if keys are missing.
+- Health check endpoint verifies the Next.js server is live and returns version info.
+- Environment variable validation on first import — throws with clear error messages if required keys are missing.
 
-> 📌 `git commit -m "feat: initialize project scaffolding for Next.js and Express"`
+> 📌 `git commit -m "feat: initialize project scaffolding with Next.js route handlers"`
 
 ---
 
 ### Step 2: ClickHouse Foundation & Schema
 
-Set up `@clickhouse/client` in the backend. Write a migration script creating these tables:
+Set up `@clickhouse/client` in the Next.js server layer (`src/lib/`). Write a migration script creating these tables:
 
 | Table | Engine | Purpose |
 |-------|--------|---------|
@@ -360,7 +362,7 @@ Create `services/aiCritic.js`:
 
 ### Step 6: Core Workflow Integration (The Golden Path)
 
-Create the master backend route: `POST /api/claims/submit`
+Create the master API route: `POST /api/claims/submit`
 
 **Flow:**
 1. Accept image (multipart) + text claim + claimant wallet address.
@@ -393,7 +395,7 @@ Create admin route: `POST /api/claims/:id/approve`
 
 #### 7a. Transparency Dashboard (Public)
 Build a real-time dashboard UI polling `GET /api/metrics`.
-- Backend queries ClickHouse Materialized Views for lightning-fast aggregates.
+- API route queries ClickHouse Materialized Views for lightning-fast aggregates.
 - Displays:
   - **Fund Balance** (total available, total disbursed, reserve amount).
   - **AI Decision Ratios** (approve vs. escalate vs. deny — aggregated, no individual claims).
