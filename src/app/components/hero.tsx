@@ -17,6 +17,8 @@ type GlobeControls = {
   enableZoom: boolean;
   enablePan: boolean;
   rotateSpeed: number;
+  minDistance: number;
+  maxDistance: number;
   addEventListener: (type: "change", callback: () => void) => void;
   removeEventListener: (type: "change", callback: () => void) => void;
 };
@@ -30,7 +32,7 @@ type GlobePointOfView = {
 type GlobeInstance = {
   globeMaterial: () => GlobeMaterial | null;
   controls: () => GlobeControls;
-  pointOfView: () => GlobePointOfView;
+  pointOfView: (point?: GlobePointOfView, transitionMs?: number) => GlobePointOfView;
 };
 
 type CountryFeature = {
@@ -171,6 +173,7 @@ function findNearestDisaster(lat: number, lng: number) {
 export function Hero() {
   const navigate = useNavigate();
   const globeRef = useRef<GlobeInstance | null>(null);
+  const globeContainerRef = useRef<HTMLDivElement | null>(null);
   const [countryFeatures, setCountryFeatures] = useState<CountryFeature[]>([]);
   const [activeDisaster, setActiveDisaster] = useState<DisasterCampaign>(DISASTER_CAMPAIGNS[0]);
   const [globeReady, setGlobeReady] = useState(false);
@@ -204,23 +207,38 @@ export function Hero() {
     if (!globeReady || !globeRef.current) return;
 
     const controls = globeRef.current.controls();
+    const initialAltitude = globeRef.current.pointOfView().altitude;
 
     controls.autoRotate = false;
     controls.enableZoom = false;
     controls.enablePan = false;
     controls.rotateSpeed = 0.6;
+    controls.minDistance = initialAltitude;
+    controls.maxDistance = initialAltitude;
 
+    const sceneContainer = globeContainerRef.current?.querySelector(".scene-container") as HTMLElement | null;
+    const htmlLayer = sceneContainer?.lastElementChild as HTMLElement | null;
+    if (sceneContainer) {
+      sceneContainer.style.overflow = "visible";
+    }
+    if (htmlLayer) {
+      htmlLayer.style.overflow = "visible";
+    }
     const material = globeRef.current.globeMaterial();
     if (material) {
-      material.color.set("#082f49");
-      material.emissive.set("#0e7490");
-      material.emissiveIntensity = 0.16;
-      material.shininess = 0.75;
+      material.color.set("#67e8f9");
+      material.emissive.set("#0891b2");
+      material.emissiveIntensity = 0.22;
+      material.shininess = 0.25;
     }
 
     const updateNearest = () => {
       const pov = globeRef.current?.pointOfView();
       if (!pov) return;
+
+      if (Math.abs(pov.altitude - initialAltitude) > 0.0001) {
+        globeRef.current?.pointOfView({ lat: pov.lat, lng: pov.lng, altitude: initialAltitude }, 0);
+      }
 
       const nearest = findNearestDisaster(pov.lat, pov.lng);
       setActiveDisaster((current) => {
@@ -249,14 +267,20 @@ export function Hero() {
 
   const hexPolygonColor = (feature: CountryFeature) => {
     const countryName = normalizeCountryName(getCountryName(feature));
-    if (!countryName) return "rgba(13, 148, 136, 0.18)";
-    if (highlightedCountryAliases.has(countryName)) return "rgba(56, 189, 248, 0.88)";
-    return "rgba(15, 118, 110, 0.24)";
+    if (!countryName) return "rgba(34, 211, 238, 0.36)";
+    if (highlightedCountryAliases.has(countryName)) return "rgba(251, 146, 60, 0.95)";
+    return "rgba(20, 184, 166, 0.58)";
   };
 
   const handleDonateClick = () => {
     // Go directly to payment page - collective disaster fund
     navigate("/payment/collective");
+  };
+
+  const handleLearnHowItWorksClick = () => {
+    const section = document.getElementById("learn-how-it-works");
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -278,7 +302,10 @@ export function Hero() {
               Donate Now
               <ArrowRight className="h-5 w-5" />
             </button>
-            <button className="flex items-center gap-2 rounded-lg border-2 border-gray-300 bg-white px-6 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50">
+            <button
+              onClick={handleLearnHowItWorksClick}
+              className="flex items-center gap-2 rounded-lg border-2 border-gray-300 bg-white px-6 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            >
               <Info className="h-5 w-5" />
               Learn How It Works
             </button>
@@ -323,12 +350,13 @@ export function Hero() {
               <div className="relative h-full w-full">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-400/20 to-cyan-500/20 blur-3xl" />
 
-                <div className="relative z-10 h-full w-full">
+                <div ref={globeContainerRef} className="relative z-10 h-full w-full">
                   <Globe
                     ref={globeRef}
                     width={GLOBE_SIZE}
                     height={GLOBE_SIZE}
                     backgroundColor="rgba(0,0,0,0)"
+                    globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
                     waitForGlobeReady={false}
                     showAtmosphere
                     atmosphereColor="#67e8f9"
@@ -389,3 +417,4 @@ export function Hero() {
     </section>
   );
 }
+

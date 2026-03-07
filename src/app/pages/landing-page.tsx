@@ -1,7 +1,7 @@
 import { Navigation } from "../components/navigation";
 import { Hero } from "../components/hero";
+import { LearnHowItWorks } from "../components/learn-how-it-works";
 import { DisasterCampaigns } from "../components/disaster-campaigns";
-import { TrustSection } from "../components/trust-section";
 import { Footer } from "../components/footer";
 
 export function LandingPage() {
@@ -9,8 +9,8 @@ export function LandingPage() {
     <div className="min-h-screen bg-white">
       <Navigation />
       <Hero />
+      <LearnHowItWorks />
       <DisasterCampaigns />
-      <TrustSection />
       <Footer />
     </div>
   );
