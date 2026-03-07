@@ -5,15 +5,10 @@ import { env } from './config.js'
 const walletAddress = await getWalletAddress()
 
 const grant = await client.grant.request(
+  { url: walletAddress.authServer },
   {
-    url: walletAddress.authServer,
     access_token: {
       access: [
-        {
-          identifier: walletAddress.id,
-          type: 'quote',
-          actions: ['create', 'read']
-        },
         {
           identifier: walletAddress.id,
           type: 'outgoing-payment',
@@ -29,9 +24,6 @@ const grant = await client.grant.request(
         nonce: env.GRANT_NONCE
       }
     }
-  },
-  {
-    walletAddress
   }
 )
 

@@ -1,4 +1,4 @@
-import { isFinalizedGrant } from '@interledger/open-payments'
+import { isFinalizedGrantWithAccessToken } from '@interledger/open-payments'
 import { client } from './client.js'
 import { requireEnv } from './config.js'
 
@@ -16,11 +16,12 @@ const grant = await client.grant.continue(
   }
 )
 
-if (!isFinalizedGrant(grant) || !grant.access_token) {
+if (!isFinalizedGrantWithAccessToken(grant)) {
   throw new Error('Grant not finalized. Ensure interact_ref is correct and approval is completed.')
 }
 
 console.log('Final outgoing access token:')
 console.log(grant.access_token.value)
 console.log('Expires in (seconds):', grant.access_token.expires_in)
+console.log('Manage URL:', grant.access_token.manage)
 console.log('Set OUTGOING_ACCESS_TOKEN to this value.')

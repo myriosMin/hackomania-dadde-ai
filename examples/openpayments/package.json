@@ -12,14 +12,25 @@
     "quote:create": "tsx src/04-create-quote.ts",
     "grant:outgoing:start": "tsx src/05-start-outgoing-grant.ts",
     "grant:outgoing:continue": "tsx src/06-continue-grant.ts",
-    "outgoing:create": "tsx src/07-create-outgoing-payment.ts"
+    "outgoing:create": "tsx src/07-create-outgoing-payment.ts",
+    "grant:outgoing:interval": "tsx src/08-grant-outgoing-interval.ts",
+    "outgoing:get": "tsx src/09-get-outgoing-payment.ts",
+    "outgoing:list": "tsx src/10-list-outgoing-payments.ts",
+    "incoming:list": "tsx src/11-list-incoming-payments.ts",
+    "incoming:get": "tsx src/12-get-incoming-payment.ts",
+    "incoming:complete": "tsx src/13-complete-incoming-payment.ts",
+    "quote:create:receive": "tsx src/14-create-quote-receive-amount.ts",
+    "token:rotate": "tsx src/15-rotate-token.ts",
+    "token:revoke": "tsx src/16-revoke-token.ts",
+    "grant:revoke": "tsx src/17-revoke-grant.ts"
   },
   "dependencies": {
-    "@interledger/open-payments": "^3.0.0",
+    "@interledger/open-payments": "^7.3.0",
     "dotenv": "^16.6.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/node": "^25.3.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }

@@ -1,28 +1,42 @@
+import { isFinalizedGrantWithAccessToken } from '@interledger/open-payments'
 import { client, getWalletAddress } from './client.js'
-import { env } from './config.js'
+import { env, requireEnv } from './config.js'
 
-const token = process.argv[2]
-const receiverWalletAddressUrl = process.argv[3] ?? env.RECEIVER_WALLET_ADDRESS
-
-if (!token) {
-  throw new Error('Usage: npm run quote:create -- <quote-access-token> [receiver-wallet-address-url]')
-}
-if (!receiverWalletAddressUrl) {
-  throw new Error('Provide receiver wallet via arg2 or RECEIVER_WALLET_ADDRESS in .env')
-}
+// receiver must be an incoming payment URL (output of step 03), e.g.
+// https://ilp.interledger-test.dev/receiver/incoming-payments/<id>
+const incomingPaymentUrl = process.argv[2] ?? requireEnv('INCOMING_PAYMENT_URL')
 
 const senderWallet = await getWalletAddress()
-const receiverWallet = await client.walletAddress.get({ url: receiverWalletAddressUrl })
 
+// Step 4a: request a non-interactive quote grant on the sender wallet
+const quoteGrant = await client.grant.request(
+  { url: senderWallet.authServer },
+  {
+    access_token: {
+      access: [
+        {
+          type: 'quote',
+          actions: ['create', 'read']
+        }
+      ]
+    }
+  }
+)
+
+if (!isFinalizedGrantWithAccessToken(quoteGrant)) {
+  throw new Error('No access token returned for quote grant')
+}
+
+// Step 4b: create the quote
 const quote = await client.quote.create(
   {
-    url: senderWallet.quoteService,
-    accessToken: token
+    url: senderWallet.resourceServer,
+    accessToken: quoteGrant.access_token.value
   },
   {
     method: 'ilp',
     walletAddress: senderWallet.id,
-    receiver: receiverWallet.id,
+    receiver: incomingPaymentUrl,
     debitAmount: {
       assetCode: senderWallet.assetCode,
       assetScale: senderWallet.assetScale,
@@ -35,4 +49,4 @@ console.log('Quote URL:', quote.id)
 console.log('Debit amount:', quote.debitAmount?.value)
 console.log('Receive amount:', quote.receiveAmount?.value)
 console.log('Expires at:', quote.expiresAt)
-console.log('If accepted, set QUOTE_URL=', quote.id)
+console.log('Set QUOTE_URL=', quote.id)

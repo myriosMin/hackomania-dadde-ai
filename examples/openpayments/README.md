@@ -84,4 +84,5 @@ npm run outgoing:create -- <outgoing-access-token> <quote-url>
 
 - Amount values are integer minor units. If scale is `2`, then `100` means `1.00`.
 - `PRIVATE_KEY` should point to your PEM file path used for wallet API credentials.
+- `PRIVATE_KEY` can be PEM text, a PEM file path, or base64-encoded PKCS#8 DER.
 - You can also place `CONTINUE_*`, `OUTGOING_ACCESS_TOKEN`, and `QUOTE_URL` in `.env` to omit CLI args.

@@ -8,15 +8,15 @@ const walletAddress = await getWalletAddress()
 
 const outgoingPayment = await client.outgoingPayment.create(
   {
-    url: walletAddress.outgoingPayments,
+    url: walletAddress.resourceServer,
     accessToken
   },
   {
     walletAddress: walletAddress.id,
-    quote: quoteId
+    quoteId
   }
 )
 
 console.log('Outgoing payment URL:', outgoingPayment.id)
-console.log('State:', outgoingPayment.state)
+console.log('Failed:', outgoingPayment.failed)
 console.log('Created at:', outgoingPayment.createdAt)
