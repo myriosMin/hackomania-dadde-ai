@@ -22,10 +22,20 @@ interface ServerConfig {
   SUPABASE_ANON_KEY: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
 
-  // Open Payments
+  // Open Payments — COLLECTOR (fund platform wallet)
   OPEN_PAYMENTS_WALLET_ADDRESS: string;
   OPEN_PAYMENTS_KEY_ID: string;
   OPEN_PAYMENTS_PRIVATE_KEY: string;
+
+  // Open Payments — SENDER test wallet (demo donor)
+  SENDER_WALLET_ADDRESS: string;
+  SENDER_WALLET_KEY_ID: string;
+  SENDER_WALLET_PRIVATE_KEY: string;
+
+  // Open Payments — RECEIVER test wallet (demo aid recipient)
+  RECEIVER_WALLET_ADDRESS: string;
+  RECEIVER_WALLET_KEY_ID: string;
+  RECEIVER_WALLET_PRIVATE_KEY: string;
 
   // LangFuse (optional)
   LANGFUSE_PUBLIC_KEY?: string;
@@ -42,7 +52,12 @@ const REQUIRED: (keyof ServerConfig)[] = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  // Open Payments keys are optional until Step 3 implementation
+  // NOTE: Open Payments keys (OPEN_PAYMENTS_WALLET_ADDRESS, OPEN_PAYMENTS_KEY_ID,
+  // OPEN_PAYMENTS_PRIVATE_KEY) are intentionally NOT in this list — they are
+  // validated at the route level at runtime so the dev server starts even
+  // without a test wallet configured.  The /api/payments/* routes return 503 if
+  // the keys are absent.  See https://wallet.interledger-test.dev to set up a
+  // test wallet and generate keys.
 ];
 
 function buildConfig(): ServerConfig {
@@ -88,6 +103,14 @@ function buildConfig(): ServerConfig {
       process.env.OPEN_PAYMENTS_WALLET_ADDRESS ?? "",
     OPEN_PAYMENTS_KEY_ID: process.env.OPEN_PAYMENTS_KEY_ID ?? "",
     OPEN_PAYMENTS_PRIVATE_KEY: process.env.OPEN_PAYMENTS_PRIVATE_KEY ?? "",
+
+    SENDER_WALLET_ADDRESS: process.env.SENDER_WALLET_ADDRESS ?? "",
+    SENDER_WALLET_KEY_ID: process.env.SENDER_WALLET_KEY_ID ?? "",
+    SENDER_WALLET_PRIVATE_KEY: process.env.SENDER_WALLET_PRIVATE_KEY ?? "",
+
+    RECEIVER_WALLET_ADDRESS: process.env.RECEIVER_WALLET_ADDRESS ?? "",
+    RECEIVER_WALLET_KEY_ID: process.env.RECEIVER_WALLET_KEY_ID ?? "",
+    RECEIVER_WALLET_PRIVATE_KEY: process.env.RECEIVER_WALLET_PRIVATE_KEY ?? "",
 
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,

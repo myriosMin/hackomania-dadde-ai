@@ -23,6 +23,7 @@
     "@copilotkit/runtime": "^1.53.0",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "@interledger/open-payments": "^7.3.0",
     "@langchain/core": "^1.1.31",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",

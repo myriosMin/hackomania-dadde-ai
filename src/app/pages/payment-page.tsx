@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { useParams, useNavigate, Link } from "react-router";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
 import { campaigns } from "../components/disaster-campaigns";
-import { CreditCard, Smartphone, Wallet, Check, ArrowLeft, Shield } from "lucide-react";
+import { CreditCard, Smartphone, Wallet, Check, ArrowLeft, Shield, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 
 const paymentMethods = [
   { id: "openpayments", name: "Open Payments", icon: "🌐", highlighted: true, label: "Default" },
@@ -14,9 +14,48 @@ const paymentMethods = [
 export function PaymentPage() {
   const { campaignId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>("openpayments");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
+  const [walletAssetCode, setWalletAssetCode] = useState("USD");
+  const [walletAssetScale, setWalletAssetScale] = useState(2);
+
+  // Handle return from IDP callback (reads ?status=success|error|cancelled)
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (!status) return;
+
+    if (status === "success") {
+      const paymentId = searchParams.get("payment_id") ?? "";
+      setPaymentSuccess(
+        `Donation completed successfully!${paymentId ? ` Payment ID: ${paymentId}` : ""}`
+      );
+    } else if (status === "cancelled") {
+      setPaymentError("Payment was cancelled. You can try again when you're ready.");
+    } else if (status === "error") {
+      const message = searchParams.get("message") ?? "Something went wrong";
+      setPaymentError(message);
+    }
+
+    // Clean the query params from the URL so a refresh doesn't re-trigger
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // Fetch the fund wallet's actual currency on mount
+  useEffect(() => {
+    fetch("/api/payments/wallet-info")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.assetCode) setWalletAssetCode(data.assetCode);
+        if (data.assetScale !== undefined) setWalletAssetScale(data.assetScale);
+      })
+      .catch(() => {/* keep defaults */});
+  }, []);
   
   // Handle collective fund - no specific campaign
   const isCollectiveFund = campaignId === "collective";
@@ -44,11 +83,62 @@ export function PaymentPage() {
 
   const suggestedAmounts = [25, 50, 100, 250];
 
-  const handleComplete = () => {
-    if (selectedAmount || customAmount) {
+  const handleComplete = async () => {
+    const donationAmount = selectedAmount ?? Number(customAmount);
+    if (!donationAmount || donationAmount <= 0) return;
+
+    setPaymentError(null);
+    setPaymentSuccess(null);
+
+    if (selectedPaymentMethod === "openpayments") {
+      setIsProcessing(true);
+      try {
+        // Convert display amount to base units using the wallet's actual asset scale
+        const baseAmount = String(Math.round(donationAmount * Math.pow(10, walletAssetScale)));
+
+        const res = await fetch("/api/payments/contribute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderWalletAddress: walletAddress || undefined,
+            amount: baseAmount,
+            assetCode: walletAssetCode,
+            assetScale: walletAssetScale,
+            // The redirectUrl is used by the backend as the return_url for
+            // the callback route (where to send the user after IDP consent).
+            // The actual callback URL is built server-side.
+            redirectUrl: window.location.pathname,
+            disasterEventId: campaign?.id ?? undefined,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error ?? data.errors?.join(", ") ?? "Payment failed");
+        }
+
+        if (data.completed) {
+          // Non-interactive grant — payment done server-side
+          setPaymentSuccess(
+            `Payment completed! ID: ${data.paymentId}. ${walletAssetCode} ${donationAmount} donated successfully.`
+          );
+          setTimeout(() => navigate("/"), 3000);
+        } else if (data.redirectUrl) {
+          // Interactive grant — redirect to IDP for consent.
+          // All continuation state is stored server-side (pending grants store).
+          // The callback route will complete the payment after IDP approval.
+          window.location.href = data.redirectUrl;
+        }
+      } catch (err) {
+        setPaymentError(err instanceof Error ? err.message : "Payment failed. Please try again.");
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      // Non-Open-Payments methods — placeholder
       const fundName = isCollectiveFund ? "DADDE Collective Disaster Fund" : campaign!.name;
-      // Simulate payment processing
-      alert(`Thank you for your donation of $${selectedAmount || customAmount} to ${fundName}!`);
+      alert(`Thank you for your donation of $${donationAmount} to ${fundName}! (Demo — ${selectedPaymentMethod} not yet integrated)`);
       navigate("/");
     }
   };
@@ -212,21 +302,53 @@ export function PaymentPage() {
                       </label>
                       <input
                         type="text"
-                        placeholder="$wallet.example.com/alice"
+                        value={walletAddress}
+                        onChange={(e) => setWalletAddress(e.target.value)}
+                        placeholder="http://ilp.interledger-test.dev/your-wallet"
                         className="w-full rounded-lg border border-teal-300 px-3 py-2 focus:border-teal-500 focus:outline-none"
                       />
+                      <p className="mt-1 text-xs text-teal-600">
+                        Leave empty to use the demo test wallet
+                      </p>
                     </div>
                   </div>
                 )}
               </div>
 
+              {/* Payment status messages */}
+              {paymentError && (
+                <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                  <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+                  <div>
+                    <p className="font-medium text-red-800">Payment failed</p>
+                    <p className="text-sm text-red-600">{paymentError}</p>
+                  </div>
+                </div>
+              )}
+              {paymentSuccess && (
+                <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+                  <div>
+                    <p className="font-medium text-green-800">Donation successful!</p>
+                    <p className="text-sm text-green-600">{paymentSuccess}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Complete Donation Button */}
               <button
                 onClick={handleComplete}
-                disabled={!selectedPaymentMethod || (!selectedAmount && !customAmount)}
-                className="w-full rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-6 py-4 text-lg font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isProcessing || !selectedPaymentMethod || (!selectedAmount && !customAmount)}
+                className="w-full rounded-lg bg-linear-to-r from-teal-500 to-cyan-600 px-6 py-4 text-lg font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Complete Donation
+                {isProcessing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Processing payment…
+                  </span>
+                ) : (
+                  "Complete Donation"
+                )}
               </button>
               
               <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
@@ -282,7 +404,7 @@ export function PaymentPage() {
                   <div className="mb-1 flex justify-between">
                     <span className="text-sm text-gray-700">Your donation</span>
                     <span className="font-bold text-teal-600">
-                      ${selectedAmount || customAmount || "0"}
+                      {walletAssetCode} {selectedAmount || customAmount || "0"}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600">
