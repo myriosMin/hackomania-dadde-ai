@@ -259,7 +259,9 @@ export function Checkout() {
 
                   {/* Learn More Link */}
                   <a
-                    href="#"
+                    href="https://dadde.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
                   >
                     <span>Learn more about DADDE</span>
