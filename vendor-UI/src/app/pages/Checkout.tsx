@@ -38,6 +38,7 @@ export function Checkout() {
   const total = subtotal + shipping + roundUpAmount;
 
   const apiBase = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? "";
+  const defaultWallet = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_SENDER_WALLET_ADDRESS ?? "";
 
   const toBaseUnits = (value: string, scale = 2): string => {
     const num = Number(value);
@@ -247,9 +248,9 @@ export function Checkout() {
                     {walletError && (
                       <p className="mt-2 text-xs text-red-600">{walletError}</p>
                     )}
-                    {!walletAddress.trim() && !walletError && (
+                    {!walletAddress.trim() && !walletError && defaultWallet && (
                       <p className="mt-2 text-xs text-gray-400">
-                        Leave blank to use the default test wallet (<span className="font-mono">$ilp.interledger-test.dev/test-min</span>).
+                        Leave blank to use the default test wallet (<span className="font-mono">{defaultWallet}</span>).
                       </p>
                     )}
                   </div>
