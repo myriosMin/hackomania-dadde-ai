@@ -68,3 +68,6 @@ venv/
 .venv/
 __pycache__/
 .pycache/
+
+#dummy data
+/mock_data

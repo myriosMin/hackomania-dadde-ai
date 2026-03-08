@@ -3,12 +3,19 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
 import { campaigns } from "../components/disaster-campaigns";
-import { CreditCard, Smartphone, Wallet, Check, ArrowLeft, Shield, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { CreditCard, Smartphone, Wallet, Check, ArrowLeft, Shield, Loader2, AlertCircle, CheckCircle2, RefreshCw, Zap } from "lucide-react";
 
 const paymentMethods = [
   { id: "openpayments", name: "Open Payments", icon: "🌐", highlighted: true, label: "Default" },
   { id: "card", name: "Debit/Credit Card", icon: "💳" },
   { id: "paynow", name: "PayNow", icon: "📱" },
+];
+
+const recurringIntervals = [
+  { id: "1min", label: "Every 1 Min", interval: "R/{START}/PT1M" },
+  { id: "weekly", label: "Weekly", interval: "R/{START}/P1W" },
+  { id: "monthly", label: "Monthly", interval: "R/{START}/P1M" },
+  { id: "quarterly", label: "Quarterly", interval: "R/{START}/P3M" },
 ];
 
 export function PaymentPage() {
@@ -24,22 +31,33 @@ export function PaymentPage() {
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
   const [walletAssetCode, setWalletAssetCode] = useState("USD");
   const [walletAssetScale, setWalletAssetScale] = useState(2);
+  const [donationType, setDonationType] = useState<"one-time" | "recurring">("one-time");
+  const [selectedInterval, setSelectedInterval] = useState("monthly");
 
   // Handle return from IDP callback (reads ?status=success|error|cancelled)
+  // Also handles subscription IDP return (interact_ref param)
   useEffect(() => {
     const status = searchParams.get("status");
-    if (!status) return;
+    const interactRef = searchParams.get("interact_ref");
+    const idpError = searchParams.get("error");
+
+    if (!status && !interactRef && !idpError) return;
 
     if (status === "success") {
       const paymentId = searchParams.get("payment_id") ?? "";
       setPaymentSuccess(
         `Donation completed successfully!${paymentId ? ` Payment ID: ${paymentId}` : ""}`
       );
-    } else if (status === "cancelled") {
+    } else if (status === "cancelled" || idpError === "access_denied") {
       setPaymentError("Payment was cancelled. You can try again when you're ready.");
     } else if (status === "error") {
       const message = searchParams.get("message") ?? "Something went wrong";
       setPaymentError(message);
+    } else if (interactRef) {
+      // Subscription IDP return — the recurring grant was approved
+      setPaymentSuccess(
+        "Recurring subscription activated! Your wallet will be charged automatically on each interval."
+      );
     }
 
     // Clean the query params from the URL so a refresh doesn't re-trigger
@@ -96,6 +114,37 @@ export function PaymentPage() {
         // Convert display amount to base units using the wallet's actual asset scale
         const baseAmount = String(Math.round(donationAmount * Math.pow(10, walletAssetScale)));
 
+        if (donationType === "recurring") {
+          // ── Recurring / Subscription flow ──
+          const intervalTemplate = recurringIntervals.find((i) => i.id === selectedInterval);
+          const now = new Date();
+          const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+          const interval = (intervalTemplate?.interval ?? "R/{START}/P1M").replace("{START}", start);
+
+          const res = await fetch("/api/payments/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              senderWalletAddress: walletAddress || undefined,
+              pledgeAmount: baseAmount,
+              assetCode: walletAssetCode,
+              assetScale: walletAssetScale,
+              interval,
+              redirectUrl: window.location.origin + window.location.pathname,
+            }),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error ?? data.errors?.join(", ") ?? "Subscription failed");
+          }
+
+          if (data.redirectUrl) {
+            window.location.href = data.redirectUrl;
+          }
+        } else {
+          // ── One-time donation flow ──
         const res = await fetch("/api/payments/contribute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -130,6 +179,7 @@ export function PaymentPage() {
           // The callback route will complete the payment after IDP approval.
           window.location.href = data.redirectUrl;
         }
+        } // end of one-time else block
       } catch (err) {
         setPaymentError(err instanceof Error ? err.message : "Payment failed. Please try again.");
       } finally {
@@ -164,6 +214,64 @@ export function PaymentPage() {
                 <h2 className="mb-6 text-2xl font-bold text-gray-900">
                   Complete Your Donation
                 </h2>
+
+                {/* Donation Type Toggle */}
+                <div className="mb-6">
+                  <label className="mb-3 block text-sm font-medium text-gray-700">
+                    Donation Type
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setDonationType("one-time")}
+                      className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 font-medium transition-all ${
+                        donationType === "one-time"
+                          ? "border-teal-500 bg-teal-50 text-teal-700"
+                          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <Zap className="h-4 w-4" />
+                      One-Time
+                    </button>
+                    <button
+                      onClick={() => setDonationType("recurring")}
+                      className={`flex items-center justify-center gap-2 rounded-lg border-2 px-4 py-3 font-medium transition-all ${
+                        donationType === "recurring"
+                          ? "border-purple-500 bg-purple-50 text-purple-700"
+                          : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                      }`}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Recurring
+                    </button>
+                  </div>
+                </div>
+
+                {/* Recurring Interval Selection */}
+                {donationType === "recurring" && (
+                  <div className="mb-6">
+                    <label className="mb-3 block text-sm font-medium text-gray-700">
+                      Frequency
+                    </label>
+                    <div className="grid grid-cols-4 gap-3">
+                      {recurringIntervals.map((interval) => (
+                        <button
+                          key={interval.id}
+                          onClick={() => setSelectedInterval(interval.id)}
+                          className={`rounded-lg border-2 px-4 py-3 font-medium transition-all ${
+                            selectedInterval === interval.id
+                              ? "border-purple-500 bg-purple-50 text-purple-700"
+                              : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                          }`}
+                        >
+                          {interval.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Your wallet will be charged this amount every {selectedInterval} via Open Payments recurring grant.
+                    </p>
+                  </div>
+                )}
                 
                 {/* Amount Selection */}
                 <div className="mb-6">
@@ -339,12 +447,21 @@ export function PaymentPage() {
               <button
                 onClick={handleComplete}
                 disabled={isProcessing || !selectedPaymentMethod || (!selectedAmount && !customAmount)}
-                className="w-full rounded-lg bg-linear-to-r from-teal-500 to-cyan-600 px-6 py-4 text-lg font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className={`w-full rounded-lg px-6 py-4 text-lg font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                  donationType === "recurring"
+                    ? "bg-linear-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700"
+                    : "bg-linear-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700"
+                }`}
               >
                 {isProcessing ? (
                   <span className="flex items-center justify-center gap-2">
                     <Loader2 className="h-5 w-5 animate-spin" />
-                    Processing payment…
+                    {donationType === "recurring" ? "Setting up subscription…" : "Processing payment…"}
+                  </span>
+                ) : donationType === "recurring" ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <RefreshCw className="h-5 w-5" />
+                    Start {selectedInterval.charAt(0).toUpperCase() + selectedInterval.slice(1)} Subscription
                   </span>
                 ) : (
                   "Complete Donation"
@@ -400,15 +517,18 @@ export function PaymentPage() {
                   )}
                 </div>
                 
-                <div className="mt-4 rounded-lg bg-teal-50 p-4">
+                <div className={`mt-4 rounded-lg p-4 ${donationType === "recurring" ? "bg-purple-50" : "bg-teal-50"}`}>
                   <div className="mb-1 flex justify-between">
                     <span className="text-sm text-gray-700">Your donation</span>
-                    <span className="font-bold text-teal-600">
+                    <span className={`font-bold ${donationType === "recurring" ? "text-purple-600" : "text-teal-600"}`}>
                       {walletAssetCode} {selectedAmount || customAmount || "0"}
+                      {donationType === "recurring" && `/${selectedInterval.replace("ly", "")}`}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600">
-                    One-time payment • Guest user
+                    {donationType === "recurring"
+                      ? `${selectedInterval.charAt(0).toUpperCase() + selectedInterval.slice(1)} subscription • Open Payments`
+                      : "One-time payment • Guest user"}
                   </p>
                 </div>
               </div>

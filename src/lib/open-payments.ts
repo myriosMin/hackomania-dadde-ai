@@ -96,8 +96,11 @@ export interface PayoutResult {
 // Multi-wallet client factory
 // ---------------------------------------------------------------------------
 
-/** Cache of authenticated clients keyed by wallet address URL. */
-const _clients = new Map<string, AuthenticatedClient>();
+/** Cache of authenticated clients keyed by wallet address URL.
+ *  Persisted on globalThis to survive Next.js dev hot-reloads. */
+const _globalClients = globalThis as unknown as { __opClients?: Map<string, AuthenticatedClient> };
+if (!_globalClients.__opClients) _globalClients.__opClients = new Map();
+const _clients = _globalClients.__opClients;
 
 /**
  * Resolve a private key from various formats:
@@ -251,6 +254,7 @@ export function hashWalletAddress(walletAddress: string): string {
  * Entries expire after 15 minutes (cleanup on read).
  */
 export interface PendingGrant {
+  type: "CONTRIBUTION";
   continueToken: string;
   continueUri: string;
   incomingPaymentUrl: string;
@@ -262,14 +266,65 @@ export interface PendingGrant {
   createdAt: number;
 }
 
-const _pendingGrants = new Map<string, PendingGrant>();
+/**
+ * Pending state for a payout that is waiting for the collector admin to
+ * approve the interactive outgoing-payment grant at the IDP.
+ */
+export interface PendingPayout {
+  type: "PAYOUT";
+  continueToken: string;
+  continueUri: string;
+  quoteId: string;
+  collectorResourceServer: string;
+  collectorWalletId: string;
+  receiverIncomingUrl: string;
+  receiverIncomingAccessToken: string;
+  claimId: string;
+  disasterEventId?: string;
+  collectorAddress: string;
+  receiverAddress: string;
+  debitAmount: { value: string; assetCode: string; assetScale: number };
+  createdAt: number;
+}
+
+/**
+ * Pending state for a subscription that is waiting for the donor to
+ * approve the recurring outgoing-payment grant at the IDP.
+ */
+export interface PendingSubscription {
+  type: "SUBSCRIPTION";
+  continueToken: string;
+  continueUri: string;
+  incomingPaymentUrl: string;
+  senderWalletAddress: string;
+  pledgeAmount: string;
+  assetCode: string;
+  assetScale: number;
+  interval: string;
+  createdAt: number;
+}
+
+type PendingState = PendingGrant | PendingPayout | PendingSubscription;
+
+/** Persisted on globalThis to survive Next.js dev hot-reloads. */
+const _globalPending = globalThis as unknown as { __opPendingGrants?: Map<string, PendingState> };
+if (!_globalPending.__opPendingGrants) _globalPending.__opPendingGrants = new Map();
+const _pendingGrants = _globalPending.__opPendingGrants;
 const PENDING_GRANT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 export function savePendingGrant(stateKey: string, data: PendingGrant): void {
   _pendingGrants.set(stateKey, data);
 }
 
-export function getPendingGrant(stateKey: string): PendingGrant | undefined {
+export function savePendingPayout(stateKey: string, data: PendingPayout): void {
+  _pendingGrants.set(stateKey, data);
+}
+
+export function savePendingSubscription(stateKey: string, data: PendingSubscription): void {
+  _pendingGrants.set(stateKey, data);
+}
+
+export function getPendingState(stateKey: string): PendingState | undefined {
   const data = _pendingGrants.get(stateKey);
   if (!data) return undefined;
   if (Date.now() - data.createdAt > PENDING_GRANT_TTL_MS) {
@@ -279,8 +334,270 @@ export function getPendingGrant(stateKey: string): PendingGrant | undefined {
   return data;
 }
 
+/** @deprecated Use getPendingState — kept for backwards compat */
+export function getPendingGrant(stateKey: string): PendingGrant | undefined {
+  const s = getPendingState(stateKey);
+  return s?.type === "CONTRIBUTION" ? s : undefined;
+}
+
 export function deletePendingGrant(stateKey: string): void {
   _pendingGrants.delete(stateKey);
+}
+
+// ---------------------------------------------------------------------------
+// Active Subscription Store & Scheduler
+// ---------------------------------------------------------------------------
+
+/**
+ * After IDP approval, the finalized grant token is saved here so that
+ * a background scheduler can create subsequent payments automatically.
+ */
+export interface ActiveSubscription {
+  id: string;
+  senderWalletAddress: string;
+  /** Finalized grant access token — allows creating outgoing payments. */
+  grantAccessToken: string;
+  /** Token management URL for rotation (optional). */
+  grantManageUrl?: string;
+  pledgeAmount: string;
+  assetCode: string;
+  assetScale: number;
+  /** ISO 8601 repeating interval e.g. "R/2026-03-01T00:00:00Z/PT1M" */
+  interval: string;
+  /** Parsed interval in milliseconds. */
+  intervalMs: number;
+  lastPaymentAt: number;
+  nextPaymentAt: number;
+  createdAt: number;
+  status: "ACTIVE" | "PAUSED" | "CANCELLED";
+}
+
+/** Persisted on globalThis to survive Next.js dev hot-reloads. */
+const _globalSubs = globalThis as unknown as {
+  __opActiveSubs?: Map<string, ActiveSubscription>;
+  __opSchedulerTimer?: ReturnType<typeof setInterval> | null;
+};
+if (!_globalSubs.__opActiveSubs) _globalSubs.__opActiveSubs = new Map();
+if (!_globalSubs.__opSchedulerTimer) _globalSubs.__opSchedulerTimer = null;
+const _activeSubscriptions = _globalSubs.__opActiveSubs;
+let _schedulerTimer = _globalSubs.__opSchedulerTimer;
+
+/**
+ * Parse an ISO 8601 duration string (e.g. "PT1M", "P1W", "P1M") to
+ * milliseconds. Approximates months as 30 days and years as 365 days.
+ */
+function parseISO8601Duration(duration: string): number {
+  const m = duration.match(
+    /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/,
+  );
+  if (!m) throw new Error(`Cannot parse ISO 8601 duration: ${duration}`);
+
+  const [, yy, mo, ww, dd, hh, mi, ss] = m.map((v) => parseInt(v) || 0);
+  return (
+    yy * 365 * 24 * 60 * 60 * 1000 +
+    mo * 30 * 24 * 60 * 60 * 1000 +
+    ww * 7 * 24 * 60 * 60 * 1000 +
+    dd * 24 * 60 * 60 * 1000 +
+    hh * 60 * 60 * 1000 +
+    mi * 60 * 1000 +
+    ss * 1000
+  );
+}
+
+/**
+ * Extract the duration segment from a repeating interval string.
+ * "R/2026-03-01T00:00:00Z/PT1M" → "PT1M"
+ */
+function extractDuration(interval: string): string {
+  const parts = interval.split("/");
+  return parts[parts.length - 1];
+}
+
+export function saveActiveSubscription(sub: ActiveSubscription): void {
+  _activeSubscriptions.set(sub.id, sub);
+  console.log(
+    `[Subscriptions] Active subscription saved: ${sub.id}, next payment at: ${new Date(sub.nextPaymentAt).toISOString()}`,
+  );
+  ensureSchedulerRunning();
+}
+
+export function getActiveSubscriptions(): ActiveSubscription[] {
+  return Array.from(_activeSubscriptions.values()).filter((s) => s.status === "ACTIVE");
+}
+
+export function cancelActiveSubscription(id: string): boolean {
+  const sub = _activeSubscriptions.get(id);
+  if (!sub) return false;
+  sub.status = "CANCELLED";
+  _activeSubscriptions.set(id, sub);
+  return true;
+}
+
+function ensureSchedulerRunning(): void {
+  if (_schedulerTimer) return;
+  console.log("[Subscriptions] Starting subscription scheduler (every 30s)");
+  const timer = setInterval(async () => {
+    try {
+      await processSubscriptions();
+    } catch (err) {
+      console.error("[Subscriptions] Scheduler error:", err);
+    }
+  }, 30_000);
+  _schedulerTimer = timer;
+  _globalSubs.__opSchedulerTimer = timer;
+}
+
+/**
+ * Process all active subscriptions that are due. Called automatically by the
+ * scheduler and can also be triggered manually via the API route.
+ */
+export async function processSubscriptions(): Promise<{
+  processed: number;
+  errors: string[];
+}> {
+  const now = Date.now();
+  const subs = getActiveSubscriptions();
+  let processed = 0;
+  const errors: string[] = [];
+
+  for (const sub of subs) {
+    if (now < sub.nextPaymentAt) continue; // not yet due
+
+    // Claim this interval BEFORE executing so overlapping ticks skip it
+    const dueAt = sub.nextPaymentAt;
+    sub.nextPaymentAt = now + sub.intervalMs;
+    _activeSubscriptions.set(sub.id, sub);
+
+    try {
+      console.log(
+        `[Subscriptions] Processing ${sub.id}, was due at ${new Date(dueAt).toISOString()}`,
+      );
+      await executeSubscriptionPayment(sub);
+
+      sub.lastPaymentAt = Date.now();
+      _activeSubscriptions.set(sub.id, sub);
+
+      processed++;
+      console.log(
+        `[Subscriptions] ${sub.id} paid. Next at: ${new Date(sub.nextPaymentAt).toISOString()}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Subscriptions] Failed ${sub.id}:`, err);
+      errors.push(`${sub.id}: ${msg}`);
+    }
+  }
+
+  if (processed > 0 || errors.length > 0) {
+    console.log(`[Subscriptions] Processed ${processed}, errors: ${errors.length}`);
+  }
+  return { processed, errors };
+}
+
+/**
+ * Execute a single recurring subscription payment using the stored grant token.
+ * Creates a fresh incoming payment, quote, and outgoing payment for each cycle.
+ */
+async function executeSubscriptionPayment(sub: ActiveSubscription): Promise<void> {
+  const collectorAddress = process.env.OPEN_PAYMENTS_WALLET_ADDRESS!;
+  const senderClient = await getSenderClient(sub.senderWalletAddress).catch(() => getCollectorClient());
+  const collectorClient = await getCollectorClient();
+
+  const donorWallet = await senderClient.walletAddress.get({ url: sub.senderWalletAddress });
+  const collectorWallet = await collectorClient.walletAddress.get({ url: collectorAddress });
+
+  // 1. New incoming payment on the fund wallet
+  const incomingGrant = await collectorClient.grant.request(
+    { url: collectorWallet.authServer },
+    { access_token: { access: [{ type: "incoming-payment", actions: ["create", "read", "list", "complete"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(incomingGrant)) {
+    throw new Error("Collector incoming-payment grant must be non-interactive");
+  }
+  const incomingPayment = await collectorClient.incomingPayment.create(
+    { url: collectorWallet.resourceServer, accessToken: incomingGrant.access_token.value },
+    {
+      walletAddress: collectorWallet.id,
+      incomingAmount: {
+        value: sub.pledgeAmount,
+        assetCode: collectorWallet.assetCode,
+        assetScale: collectorWallet.assetScale,
+      },
+      metadata: { source: "daddes_fund_subscription_recurring", subscriptionId: sub.id },
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    },
+  );
+
+  // 2. Quote
+  const quoteGrant = await senderClient.grant.request(
+    { url: donorWallet.authServer },
+    { access_token: { access: [{ type: "quote", actions: ["create", "read"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(quoteGrant)) {
+    throw new Error("Quote grant must be non-interactive");
+  }
+  const quote = await senderClient.quote.create(
+    { url: donorWallet.resourceServer, accessToken: quoteGrant.access_token.value },
+    {
+      walletAddress: donorWallet.id,
+      receiver: incomingPayment.id,
+      method: "ilp",
+      debitAmount: {
+        assetCode: donorWallet.assetCode,
+        assetScale: donorWallet.assetScale,
+        value: sub.pledgeAmount,
+      },
+    },
+  );
+
+  // 3. Outgoing payment using the stored recurring grant token
+  const payment = await senderClient.outgoingPayment.create(
+    { url: donorWallet.resourceServer, accessToken: sub.grantAccessToken },
+    {
+      walletAddress: donorWallet.id,
+      quoteId: quote.id,
+      metadata: { source: "daddes_fund_subscription_recurring", subscriptionId: sub.id, interval: sub.interval },
+    },
+  );
+
+  // 4. Complete incoming payment
+  if (!payment.failed) {
+    try {
+      await collectorClient.incomingPayment.complete({
+        url: incomingPayment.id,
+        accessToken: incomingGrant.access_token.value,
+      });
+    } catch (err) {
+      console.error("[Subscriptions] Failed to complete incoming payment (non-fatal):", err);
+    }
+  }
+
+  // 5. Log to ClickHouse
+  const txResult = await chWrite("INSERT INTO transactions", [
+    {
+      type: "SUBSCRIPTION",
+      amount: Number(sub.pledgeAmount) / Math.pow(10, sub.assetScale),
+      currency: sub.assetCode,
+      sender_wallet_hash: hashWalletAddress(sub.senderWalletAddress),
+      recipient_wallet_hash: hashWalletAddress(collectorAddress),
+      disaster_event_id: null,
+      open_payments_payment_id: payment.id,
+      status: payment.failed ? "FAILED" : "COMPLETED",
+      metadata: JSON.stringify({ quote_id: quote.id, interval: sub.interval, recurring: true }),
+    },
+  ]);
+  if (!txResult.ok) {
+    console.error("[Subscriptions] ClickHouse log failed:", txResult.error);
+  }
+
+  await logEvent("PAYMENT", "payments", {
+    action: "recurring_subscription_payment",
+    payment_id: payment.id,
+    subscription_id: sub.id,
+    amount: sub.pledgeAmount,
+    interval: sub.interval,
+    status: payment.failed ? "FAILED" : "COMPLETED",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +712,7 @@ export async function initiateContribution(
 
   // Save continuation state to the pending grants store
   savePendingGrant(stateKey, {
+    type: "CONTRIBUTION",
     continueToken: outgoingGrant.continue.access_token.value,
     continueUri: outgoingGrant.continue.uri,
     incomingPaymentUrl: incomingPayment.id,
@@ -561,10 +879,15 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
   // Use receiver's own client to create their incoming payment (we hold their test key)
   const receiverClient = await getReceiverClient(receiverAddress).catch(() => collectorClient);
 
-  // 1. Resolve the receiver's wallet
-  const receiverWallet = await receiverClient.walletAddress.get({ url: receiverAddress });
+  // 1. Resolve both wallets — we need their actual currencies (may differ from params)
+  const [receiverWallet, collectorWallet] = await Promise.all([
+    receiverClient.walletAddress.get({ url: receiverAddress }).catch(e => { throw new Error(`Step1-resolveReceiverWallet: ${e?.message ?? e}`) }),
+    collectorClient.walletAddress.get({ url: collectorAddress }).catch(e => { throw new Error(`Step1-resolveCollectorWallet: ${e?.message ?? e}`) }),
+  ]);
 
-  // 2. Create incoming payment on receiver's wallet using receiver's own client
+  console.log(`[OpenPayments] Payout: receiver=${receiverWallet.assetCode}/${receiverWallet.assetScale}, collector=${collectorWallet.assetCode}/${collectorWallet.assetScale}`);
+
+  // 2. Create incoming payment on receiver's wallet — use receiver's native currency
   const receiverIncomingGrant = await receiverClient.grant.request(
     { url: receiverWallet.authServer },
     { access_token: { access: [{ type: "incoming-payment", actions: ["create", "read", "list", "complete"] }] } },
@@ -576,36 +899,16 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
     { url: receiverWallet.resourceServer, accessToken: receiverIncomingGrant.access_token.value },
     {
       walletAddress: receiverWallet.id,
-      incomingAmount: { value: params.amount, assetCode: params.assetCode, assetScale: params.assetScale },
+      // Use receiver's actual currency — never trust the client-supplied assetCode
+      incomingAmount: { value: params.amount, assetCode: receiverWallet.assetCode, assetScale: receiverWallet.assetScale },
       metadata: { claim_id: params.claimId, source: "daddes_fund_payout" },
       expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     },
   );
 
-  // 3. Resolve the collector (fund) wallet
-  const collectorWallet = await collectorClient.walletAddress.get({ url: collectorAddress });
-
-  // 4. Request a non-interactive outgoing-payment grant from the collector's auth server
-  const fundOutgoingGrant = await collectorClient.grant.request(
-    { url: collectorWallet.authServer },
-    {
-      access_token: {
-        access: [{
-          type: "outgoing-payment",
-          actions: ["create", "read"],
-          identifier: collectorAddress,
-          limits: {
-            debitAmount: { value: params.amount, assetCode: params.assetCode, assetScale: params.assetScale },
-          },
-        }],
-      },
-    },
-  );
-  if (!isFinalizedGrantWithAccessToken(fundOutgoingGrant)) {
-    throw new Error("Collector outgoing-payment grant must be non-interactive for automated payout");
-  }
-
-  // 5. Create quote from collector to receiver (requires its own grant)
+  // 3. Get a quote first so we know the exact debitAmount in the collector's currency.
+  //    This is needed before requesting the outgoing-payment grant (grant limit must
+  //    match the collector's currency, not the receiver's).
   const quoteGrant = await collectorClient.grant.request(
     { url: collectorWallet.authServer },
     { access_token: { access: [{ type: "quote", actions: ["create", "read"] }] } },
@@ -614,8 +917,8 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
     throw new Error("Quote grant must be non-interactive");
   }
 
-  // Use receiveAmount (not debitAmount) for payouts — ensures the recipient
-  // gets exactly the approved amount regardless of FX / routing fees.
+  // receiveAmount → receiver gets exactly params.amount in their currency;
+  // FX/routing fees are covered by the collector wallet.
   const quote = await collectorClient.quote.create(
     { url: collectorWallet.resourceServer, accessToken: quoteGrant.access_token.value },
     {
@@ -630,7 +933,43 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
     },
   );
 
-  // 6. Execute outgoing payment from fund to receiver
+  console.log(`[OpenPayments] Quote: debit=${JSON.stringify(quote.debitAmount)}, receive=${JSON.stringify(quote.receiveAmount)}`);
+
+  // 4. Request a non-interactive outgoing-payment grant using the quoted debitAmount
+  //    (collector's currency). This must come after the quote so we know the exact amount.
+  let fundOutgoingGrant;
+  try {
+    fundOutgoingGrant = await collectorClient.grant.request(
+      { url: collectorWallet.authServer },
+      {
+        access_token: {
+          access: [{
+            type: "outgoing-payment",
+            actions: ["create", "read"],
+            identifier: collectorWallet.id,
+            limits: {
+              debitAmount: {
+                value: quote.debitAmount.value,
+                assetCode: quote.debitAmount.assetCode,
+                assetScale: quote.debitAmount.assetScale,
+              },
+            },
+          }],
+        },
+      },
+    );
+  } catch (e) {
+    throw new Error(`Step4-outgoingGrant: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!isFinalizedGrantWithAccessToken(fundOutgoingGrant)) {
+    // Interactive grant — the test server required human approval even for the platform wallet.
+    // Log the redirect URL for debugging then throw.
+    const redirect = isPendingGrant(fundOutgoingGrant) ? fundOutgoingGrant.interact?.redirect : "n/a";
+    console.error("[OpenPayments] Outgoing grant is interactive (unexpected):", redirect);
+    throw new Error(`Collector outgoing-payment grant must be non-interactive for automated payout (got interactive, redirect=${redirect})`);
+  }
+
+  // 5. Execute outgoing payment from fund to receiver
   const payment = await collectorClient.outgoingPayment.create(
     { url: collectorWallet.resourceServer, accessToken: fundOutgoingGrant.access_token.value },
     {
@@ -656,10 +995,11 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
   const status: "COMPLETED" | "FAILED" = payment.failed ? "FAILED" : "COMPLETED";
 
   // 7. Log to ClickHouse — recipient stored as hash, never raw wallet address
+  //    Log the actual debit amount in the collector's currency (from the quote)
   const txResult = await chWrite("INSERT INTO transactions", [{
     type: "PAYOUT",
-    amount: Number(params.amount) / Math.pow(10, params.assetScale),
-    currency: params.assetCode,
+    amount: Number(quote.debitAmount.value) / Math.pow(10, quote.debitAmount.assetScale),
+    currency: quote.debitAmount.assetCode,
     sender_wallet_hash: hashWalletAddress(collectorAddress),
     recipient_wallet_hash: hashWalletAddress(receiverAddress),
     disaster_event_id: params.disasterEventId ?? null,
@@ -683,6 +1023,230 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
   return { paymentId: payment.id, status };
 }
 
+/**
+ * Initiates a payout via an interactive outgoing-payment grant.
+ *
+ * The Interledger test wallet auth server always requires interactive grants
+ * for outgoing-payment (even for the platform's own collector wallet). This
+ * mirrors the contribution flow: we return an IDP redirect URL, the admin
+ * approves at the IDP, then `completePayout` finalises the payment.
+ *
+ * Flow:
+ *   1. Create incoming payment on receiver's wallet (receiver's native currency)
+ *   2. Get a quote → determines the collector's debit amount (handles FX)
+ *   3. Request interactive outgoing-payment grant → get IDP redirect URL
+ *   4. Save pending payout state keyed by a unique state token
+ *   5. Return redirect URL for the admin to approve
+ *
+ * Called from POST /api/payments/payout.
+ */
+export async function initiatePayout(
+  params: PayoutParams & { redirectUrl: string },
+): Promise<GrantRedirectResult> {
+  const collectorAddress = process.env.OPEN_PAYMENTS_WALLET_ADDRESS!;
+  const receiverAddress = params.receiverWalletAddress ?? process.env.RECEIVER_WALLET_ADDRESS ?? "";
+  if (!receiverAddress) throw new Error("receiverWalletAddress is required (or set RECEIVER_WALLET_ADDRESS)");
+
+  const collectorClient = await getCollectorClient();
+  const receiverClient = await getReceiverClient(receiverAddress).catch(() => collectorClient);
+
+  // 1. Resolve both wallets (actual currencies may differ)
+  const [receiverWallet, collectorWallet] = await Promise.all([
+    receiverClient.walletAddress.get({ url: receiverAddress }),
+    collectorClient.walletAddress.get({ url: collectorAddress }),
+  ]);
+  console.log(`[OpenPayments] initiatePayout: receiver=${receiverWallet.assetCode}/${receiverWallet.assetScale}, collector=${collectorWallet.assetCode}/${collectorWallet.assetScale}`);
+
+  // 2. Create incoming payment on receiver's wallet (receiver's native currency)
+  const receiverIncomingGrant = await receiverClient.grant.request(
+    { url: receiverWallet.authServer },
+    { access_token: { access: [{ type: "incoming-payment", actions: ["create", "read", "list", "complete"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(receiverIncomingGrant)) {
+    throw new Error("Receiver incoming-payment grant should be non-interactive");
+  }
+  const receiverIncoming = await receiverClient.incomingPayment.create(
+    { url: receiverWallet.resourceServer, accessToken: receiverIncomingGrant.access_token.value },
+    {
+      walletAddress: receiverWallet.id,
+      incomingAmount: { value: params.amount, assetCode: receiverWallet.assetCode, assetScale: receiverWallet.assetScale },
+      metadata: { claim_id: params.claimId, source: "daddes_fund_payout" },
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    },
+  );
+
+  // 3. Get a quote first so we know the exact debitAmount (collector currency)
+  const quoteGrant = await collectorClient.grant.request(
+    { url: collectorWallet.authServer },
+    { access_token: { access: [{ type: "quote", actions: ["create", "read"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(quoteGrant)) {
+    throw new Error("Quote grant must be non-interactive");
+  }
+  const quote = await collectorClient.quote.create(
+    { url: collectorWallet.resourceServer, accessToken: quoteGrant.access_token.value },
+    {
+      walletAddress: collectorWallet.id,
+      receiver: receiverIncoming.id,
+      method: "ilp",
+      receiveAmount: { assetCode: receiverWallet.assetCode, assetScale: receiverWallet.assetScale, value: params.amount },
+    },
+  );
+  console.log(`[OpenPayments] initiatePayout quote: debit=${JSON.stringify(quote.debitAmount)}, receive=${JSON.stringify(quote.receiveAmount)}`);
+
+  // 4. Request interactive outgoing-payment grant from the collector's auth server
+  const stateKey = generateNonce();
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+  const callbackUrl = new URL(`${baseUrl}/api/payments/callback`);
+  callbackUrl.searchParams.set("state", stateKey);
+  callbackUrl.searchParams.set("return_url", params.redirectUrl);
+
+  const outgoingGrant = await collectorClient.grant.request(
+    { url: collectorWallet.authServer },
+    {
+      access_token: {
+        access: [{
+          type: "outgoing-payment",
+          actions: ["create", "read"],
+          identifier: collectorWallet.id,
+          limits: {
+            debitAmount: {
+              value: quote.debitAmount.value,
+              assetCode: quote.debitAmount.assetCode,
+              assetScale: quote.debitAmount.assetScale,
+            },
+          },
+        }],
+      },
+      interact: {
+        start: ["redirect" as const],
+        finish: {
+          method: "redirect" as const,
+          uri: callbackUrl.toString(),
+          nonce: generateNonce(),
+        },
+      },
+    },
+  );
+  if (!isPendingGrant(outgoingGrant)) {
+    throw new Error("Expected interactive payout grant from collector auth server — got finalized. Check wallet config.");
+  }
+
+  // 5. Save pending payout state
+  savePendingPayout(stateKey, {
+    type: "PAYOUT",
+    continueToken: outgoingGrant.continue.access_token.value,
+    continueUri: outgoingGrant.continue.uri,
+    quoteId: quote.id,
+    collectorResourceServer: collectorWallet.resourceServer,
+    collectorWalletId: collectorWallet.id,
+    receiverIncomingUrl: receiverIncoming.id,
+    receiverIncomingAccessToken: receiverIncomingGrant.access_token.value,
+    claimId: params.claimId,
+    disasterEventId: params.disasterEventId,
+    collectorAddress,
+    receiverAddress,
+    debitAmount: {
+      value: quote.debitAmount.value,
+      assetCode: quote.debitAmount.assetCode,
+      assetScale: quote.debitAmount.assetScale,
+    },
+    createdAt: Date.now(),
+  });
+
+  console.log(`[OpenPayments] Payout pending grant saved with state key: ${stateKey}`);
+
+  return {
+    redirectUrl: outgoingGrant.interact.redirect,
+    continueToken: outgoingGrant.continue.access_token.value,
+    continueUri: outgoingGrant.continue.uri,
+  };
+}
+
+/**
+ * Completes a payout after the admin approves at the IDP.
+ * Called from GET /api/payments/callback when the state type is "PAYOUT".
+ */
+export async function completePayout(params: {
+  continueToken: string;
+  continueUri: string;
+  interactRef: string;
+  quoteId: string;
+  collectorResourceServer: string;
+  collectorWalletId: string;
+  receiverIncomingUrl: string;
+  receiverIncomingAccessToken: string;
+  claimId: string;
+  disasterEventId?: string;
+  collectorAddress: string;
+  receiverAddress: string;
+  debitAmount: { value: string; assetCode: string; assetScale: number };
+}): Promise<PayoutResult> {
+  const collectorClient = await getCollectorClient();
+
+  // 1. Continue the grant — exchange interact_ref for access token
+  const finalizedGrant = await collectorClient.grant.continue(
+    { accessToken: params.continueToken, url: params.continueUri },
+    { interact_ref: params.interactRef },
+  );
+  if (!isFinalizedGrantWithAccessToken(finalizedGrant)) {
+    throw new Error("Payout grant continuation did not return a finalized grant");
+  }
+
+  // 2. Create the outgoing payment using the pre-computed quote
+  const payment = await collectorClient.outgoingPayment.create(
+    { url: params.collectorResourceServer, accessToken: finalizedGrant.access_token.value },
+    {
+      walletAddress: params.collectorWalletId,
+      quoteId: params.quoteId,
+      metadata: { claim_id: params.claimId, source: "daddes_fund_payout" },
+    },
+  );
+
+  // 3. Complete (close) the incoming payment on the receiver's wallet
+  if (!payment.failed) {
+    try {
+      const receiverClient = await getReceiverClient(params.receiverAddress).catch(() => collectorClient);
+      await receiverClient.incomingPayment.complete({
+        url: params.receiverIncomingUrl,
+        accessToken: params.receiverIncomingAccessToken,
+      });
+      console.log("[OpenPayments] completePayout: receiver incoming payment closed:", params.receiverIncomingUrl);
+    } catch (err) {
+      console.error("[OpenPayments] Failed to complete receiver incoming payment (non-fatal):", err);
+    }
+  }
+
+  const status: "COMPLETED" | "FAILED" = payment.failed ? "FAILED" : "COMPLETED";
+
+  // 4. Log to ClickHouse
+  const txResult = await chWrite("INSERT INTO transactions", [{
+    type: "PAYOUT",
+    amount: Number(params.debitAmount.value) / Math.pow(10, params.debitAmount.assetScale),
+    currency: params.debitAmount.assetCode,
+    sender_wallet_hash: hashWalletAddress(params.collectorAddress),
+    recipient_wallet_hash: hashWalletAddress(params.receiverAddress),
+    disaster_event_id: params.disasterEventId ?? null,
+    open_payments_payment_id: payment.id,
+    status,
+    metadata: JSON.stringify({ claim_id: params.claimId, quote_id: params.quoteId }),
+  }]);
+  if (!txResult.ok) {
+    console.error("[OpenPayments] ClickHouse payout log failed:", txResult.error);
+  }
+
+  await logEvent("PAYMENT", "payments", {
+    action: "complete_payout",
+    payment_id: payment.id,
+    claim_id: params.claimId,
+    amount: params.debitAmount.value,
+    status,
+    recipient_wallet_hash: hashWalletAddress(params.receiverAddress),
+  });
+
+  return { paymentId: payment.id, status };
+}
+
 // ---------------------------------------------------------------------------
 // 3c. Subscription / Recurring Contributions
 // ---------------------------------------------------------------------------
@@ -695,12 +1259,51 @@ export async function executePayout(params: PayoutParams): Promise<PayoutResult>
  * payments will execute automatically on each interval.
  */
 export async function initiateSubscription(params: SubscribeParams): Promise<GrantRedirectResult> {
-  // Use the sender's own client (test wallet — we hold their private key)
+  const collectorAddress = process.env.OPEN_PAYMENTS_WALLET_ADDRESS!;
   const senderAddress = params.senderWalletAddress ?? process.env.SENDER_WALLET_ADDRESS!;
-  const senderClient = await getSenderClient(senderAddress);
 
-  const donorWallet = await senderClient.walletAddress.get({ url: senderAddress });
+  // Parallelize client creation — both hit JWKS / auth servers independently
+  const [senderClient, collectorClient] = await Promise.all([
+    getSenderClient(senderAddress).catch(() => getCollectorClient()),
+    getCollectorClient(),
+  ]);
 
+  // Parallelize wallet resolution
+  const [donorWallet, collectorWallet] = await Promise.all([
+    senderClient.walletAddress.get({ url: senderAddress }),
+    collectorClient.walletAddress.get({ url: collectorAddress }),
+  ]);
+
+  // 1. Create an incoming payment on the fund wallet for the first charge
+  const incomingGrant = await collectorClient.grant.request(
+    { url: collectorWallet.authServer },
+    { access_token: { access: [{ type: "incoming-payment", actions: ["create", "read", "list", "complete"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(incomingGrant)) {
+    throw new Error("Collector incoming-payment grant must be non-interactive");
+  }
+  const incomingPayment = await collectorClient.incomingPayment.create(
+    { url: collectorWallet.resourceServer, accessToken: incomingGrant.access_token.value },
+    {
+      walletAddress: collectorWallet.id,
+      incomingAmount: {
+        value: params.pledgeAmount,
+        assetCode: collectorWallet.assetCode,
+        assetScale: collectorWallet.assetScale,
+      },
+      metadata: { source: "daddes_fund_subscription" },
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    },
+  );
+
+  // 2. Build callback URL
+  const stateKey = generateNonce();
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+  const callbackUrl = new URL(`${baseUrl}/api/payments/callback`);
+  callbackUrl.searchParams.set("state", stateKey);
+  callbackUrl.searchParams.set("return_url", params.redirectUrl);
+
+  // 3. Request a recurring outgoing-payment grant
   const grant = await senderClient.grant.request(
     { url: donorWallet.authServer },
     {
@@ -713,8 +1316,8 @@ export async function initiateSubscription(params: SubscribeParams): Promise<Gra
             limits: {
               debitAmount: {
                 value: params.pledgeAmount,
-                assetCode: params.assetCode,
-                assetScale: params.assetScale,
+                assetCode: donorWallet.assetCode,
+                assetScale: donorWallet.assetScale,
               },
               interval: params.interval,
             },
@@ -725,7 +1328,7 @@ export async function initiateSubscription(params: SubscribeParams): Promise<Gra
         start: ["redirect"],
         finish: {
           method: "redirect",
-          uri: params.redirectUrl,
+          uri: callbackUrl.toString(),
           nonce: generateNonce(),
         },
       },
@@ -736,18 +1339,188 @@ export async function initiateSubscription(params: SubscribeParams): Promise<Gra
     throw new Error("Expected a pending interactive grant for subscription");
   }
 
-  await logEvent("API_CALL", "payments", {
+  // 4. Save pending state so the callback can complete the first payment
+  savePendingSubscription(stateKey, {
+    type: "SUBSCRIPTION",
+    continueToken: grant.continue.access_token.value,
+    continueUri: grant.continue.uri,
+    incomingPaymentUrl: incomingPayment.id,
+    senderWalletAddress: senderAddress,
+    pledgeAmount: params.pledgeAmount,
+    assetCode: donorWallet.assetCode,
+    assetScale: donorWallet.assetScale,
+    interval: params.interval,
+    createdAt: Date.now(),
+  });
+
+  console.log(`[OpenPayments] Subscription pending grant saved with state key: ${stateKey}`);
+
+  // Fire-and-forget — don't delay the redirect after the grant is created
+  logEvent("API_CALL", "payments", {
     action: "initiate_subscription",
     sender_wallet_hash: hashWalletAddress(senderAddress),
     pledge_amount: params.pledgeAmount,
     interval: params.interval,
-  });
+  }).catch(console.error);
 
   return {
     redirectUrl: grant.interact.redirect,
     continueToken: grant.continue.access_token.value,
     continueUri: grant.continue.uri,
   };
+}
+
+/**
+ * Complete a subscription after IDP approval (called from callback route).
+ * Continues the grant, creates a quote, and executes the first outgoing payment.
+ */
+export async function completeSubscription(params: {
+  senderWalletAddress: string;
+  continueToken: string;
+  continueUri: string;
+  interactRef: string;
+  incomingPaymentUrl: string;
+  pledgeAmount: string;
+  assetCode: string;
+  assetScale: number;
+  interval: string;
+}): Promise<{ paymentId: string }> {
+  console.log("[completeSubscription] Starting...");
+
+  // Use the sender's own authenticated client — same as completeContribution
+  const senderClient = await getSenderClient(params.senderWalletAddress);
+  console.log("[completeSubscription] Got sender client");
+
+  // 1. Continue the grant — exchange interact_ref for access token
+  const finalizedGrant = await senderClient.grant.continue(
+    {
+      accessToken: params.continueToken,
+      url: params.continueUri,
+    },
+    { interact_ref: params.interactRef },
+  );
+  console.log("[completeSubscription] Grant continued");
+
+  if (!isFinalizedGrantWithAccessToken(finalizedGrant)) {
+    throw new Error("Subscription grant continuation did not return a finalized grant");
+  }
+
+  // 2. Create a quote
+  const donorWallet = await senderClient.walletAddress.get({ url: params.senderWalletAddress });
+  console.log("[completeSubscription] Got donor wallet");
+
+  const quoteGrant = await senderClient.grant.request(
+    { url: donorWallet.authServer },
+    { access_token: { access: [{ type: "quote", actions: ["create", "read"] }] } },
+  );
+  if (!isFinalizedGrantWithAccessToken(quoteGrant)) {
+    throw new Error("Quote grant must be non-interactive");
+  }
+  console.log("[completeSubscription] Got quote grant");
+
+  const quote = await senderClient.quote.create(
+    { url: donorWallet.resourceServer, accessToken: quoteGrant.access_token.value },
+    {
+      walletAddress: donorWallet.id,
+      receiver: params.incomingPaymentUrl,
+      method: "ilp",
+      debitAmount: {
+        assetCode: donorWallet.assetCode,
+        assetScale: donorWallet.assetScale,
+        value: params.pledgeAmount,
+      },
+    },
+  );
+  console.log("[completeSubscription] Quote created:", quote.id);
+
+  // 3. Execute the outgoing payment
+  const payment = await senderClient.outgoingPayment.create(
+    { url: donorWallet.resourceServer, accessToken: finalizedGrant.access_token.value },
+    {
+      walletAddress: donorWallet.id,
+      quoteId: quote.id,
+      metadata: { source: "daddes_fund_subscription", interval: params.interval },
+    },
+  );
+  console.log("[completeSubscription] Payment created:", payment.id, "failed:", payment.failed);
+
+  // 3b. Complete (close) the incoming payment — fire and forget
+  if (!payment.failed) {
+    (async () => {
+      try {
+        const collectorClient = await getCollectorClient();
+        const cAddr = process.env.OPEN_PAYMENTS_WALLET_ADDRESS!;
+        const cWallet = await collectorClient.walletAddress.get({ url: cAddr });
+        const incomingGrant = await collectorClient.grant.request(
+          { url: cWallet.authServer },
+          { access_token: { access: [{ type: "incoming-payment", actions: ["create", "read", "list", "complete"] }] } },
+        );
+        if (isFinalizedGrantWithAccessToken(incomingGrant)) {
+          await collectorClient.incomingPayment.complete({
+            url: params.incomingPaymentUrl,
+            accessToken: incomingGrant.access_token.value,
+          });
+          console.log("[completeSubscription] Incoming payment completed");
+        }
+      } catch (err) {
+        console.error("[completeSubscription] Failed to complete incoming payment (non-fatal):", err);
+      }
+    })();
+  }
+
+  // 4. Log to ClickHouse — fire and forget so we return the redirect fast
+  const collectorAddress = process.env.OPEN_PAYMENTS_WALLET_ADDRESS!;
+  chWrite("INSERT INTO transactions", [{
+    type: "SUBSCRIPTION",
+    amount: Number(params.pledgeAmount) / Math.pow(10, params.assetScale),
+    currency: params.assetCode,
+    sender_wallet_hash: hashWalletAddress(params.senderWalletAddress),
+    recipient_wallet_hash: hashWalletAddress(collectorAddress),
+    disaster_event_id: null,
+    open_payments_payment_id: payment.id,
+    status: payment.failed ? "FAILED" : "COMPLETED",
+    metadata: JSON.stringify({ quote_id: quote.id, interval: params.interval }),
+  }]).catch((e) => console.error("[completeSubscription] ClickHouse log failed:", e));
+
+  logEvent("PAYMENT", "payments", {
+    action: "complete_subscription",
+    payment_id: payment.id,
+    amount: params.pledgeAmount,
+    assetCode: params.assetCode,
+    sender_wallet_hash: hashWalletAddress(params.senderWalletAddress),
+    interval: params.interval,
+    status: payment.failed ? "FAILED" : "COMPLETED",
+  }).catch(console.error);
+
+  // 5. Save active subscription so the scheduler can fire subsequent payments
+  if (!payment.failed) {
+    const durationStr = extractDuration(params.interval);
+    const intervalMs = parseISO8601Duration(durationStr);
+    const now = Date.now();
+    const subscriptionId = `sub_${generateNonce()}`;
+
+    saveActiveSubscription({
+      id: subscriptionId,
+      senderWalletAddress: params.senderWalletAddress,
+      grantAccessToken: finalizedGrant.access_token.value,
+      grantManageUrl: (finalizedGrant.access_token as Record<string,unknown>).manage as string | undefined,
+      pledgeAmount: params.pledgeAmount,
+      assetCode: params.assetCode,
+      assetScale: params.assetScale,
+      interval: params.interval,
+      intervalMs,
+      lastPaymentAt: now,
+      nextPaymentAt: now + intervalMs,
+      createdAt: now,
+      status: "ACTIVE",
+    });
+
+    console.log(
+      `[OpenPayments] Subscription ${subscriptionId} activated. Interval: ${durationStr} (${intervalMs}ms). Next payment at: ${new Date(now + intervalMs).toISOString()}`,
+    );
+  }
+
+  return { paymentId: payment.id };
 }
 
 // ---------------------------------------------------------------------------
