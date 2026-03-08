@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
 import { useAuth } from "../context/auth-context";
-import { Lock, TrendingUp, Calendar, DollarSign, Heart, MapPin, Download, Settings, CreditCard, ArrowUpRight, Loader2 } from "lucide-react";
+import { Lock, TrendingUp, Calendar, DollarSign, Heart, MapPin, Download, Settings, CreditCard, ArrowUpRight, Loader2, Link as LinkIcon } from "lucide-react";
 
 const donationHistory = [
   {
@@ -82,7 +82,7 @@ function formatInterval(interval: string): string {
 }
 
 export function MyGivingPage() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, loading: authLoading } = useAuth();
   const [activeSubs, setActiveSubs] = useState<ActiveSub[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -122,6 +122,18 @@ export function MyGivingPage() {
     }
   };
   
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="flex min-h-[calc(100vh-260px)] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50">

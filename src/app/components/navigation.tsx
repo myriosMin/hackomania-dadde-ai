@@ -1,10 +1,10 @@
-import { Lock, User, Settings, LogOut } from "lucide-react";
+import { Lock, User, Settings, LogOut, ShieldCheck } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { useAuth } from "../context/auth-context";
 
 export function Navigation() {
   const location = useLocation();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, isAdmin, loading } = useAuth();
   
   return (
     <nav className="border-b bg-white px-8 py-4">
@@ -58,18 +58,43 @@ export function Navigation() {
                 </span>
               </div>
             )}
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className={`flex items-center gap-1 pb-1 text-sm font-medium ${
+                  location.pathname === "/admin"
+                    ? "border-b-2 border-purple-500 text-purple-700"
+                    : "text-purple-600 hover:text-purple-700"
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Admin
+              </Link>
+            )}
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
-          {isAuthenticated ? (
+        <div className="flex items-center gap-3">
+          {loading ? (
+            <div className="h-9 w-24 animate-pulse rounded-lg bg-gray-100" />
+          ) : isAuthenticated ? (
             <>
               <Link 
                 to="/my-giving"
                 className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 <User className="h-4 w-4" />
-                {user?.name}
+                {user?.displayName || "Profile"}
+              </Link>
+              <Link
+                to="/settings"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  location.pathname === "/settings"
+                    ? "bg-gray-100 text-gray-900"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Settings className="h-4 w-4" />
               </Link>
               <button 
                 onClick={logout}
@@ -86,12 +111,14 @@ export function Navigation() {
                 className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 <User className="h-4 w-4" />
-                Profile
+                Log In
               </Link>
-              <button className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
-                <Settings className="h-4 w-4" />
-                Settings
-              </button>
+              <Link
+                to="/signup"
+                className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-4 py-2 text-sm font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
+              >
+                Sign Up
+              </Link>
             </>
           )}
         </div>

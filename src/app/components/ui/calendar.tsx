@@ -17,6 +17,7 @@ function Calendar({
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       classNames={{
         months: "flex flex-col sm:flex-row gap-2",
         month: "flex flex-col gap-4",
@@ -58,15 +59,18 @@ function Calendar({
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
         ...classNames,
-      }}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       components={{
-        IconLeft: ({ className, ...props }) => (
+        IconLeft: ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
           <ChevronLeft className={cn("size-4", className)} {...props} />
         ),
-        IconRight: ({ className, ...props }) => (
+        IconRight: ({ className, ...props }: React.SVGProps<SVGSVGElement>) => (
           <ChevronRight className={cn("size-4", className)} {...props} />
         ),
-      }}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any}
       {...props}
     />
   );

@@ -21,6 +21,7 @@
 /build
 /dist
 vendor-UI/dist/
+vendor-UI/node_modules/
 
 # misc
 .DS_Store

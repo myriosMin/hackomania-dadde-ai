@@ -1,5 +1,6 @@
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
+import { useAuth } from "../context/auth-context";
 import {
   DollarSign,
   AlertTriangle,
@@ -16,9 +17,12 @@ import {
   CheckCircle2,
   Wallet,
   Send,
+  ArrowUp,
+  ArrowDown,
+  Lock,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, Link, useNavigate } from "react-router";
 
 interface PayoutRequest {
   id: string;
@@ -51,6 +55,8 @@ interface CampaignProgress {
 }
 
 export function AdminDashboardPage() {
+  const { isAuthenticated, isAdmin, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTab, setSelectedTab] = useState<"all" | "payouts" | "verifications">("all");
 
@@ -95,6 +101,65 @@ export function AdminDashboardPage() {
 
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
+
+  // Auth guard: loading
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="flex min-h-[calc(100vh-260px)] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Auth guard: not logged in
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="flex min-h-[calc(100vh-260px)] items-center justify-center px-8 py-12">
+          <div className="w-full max-w-xl rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
+            <Lock className="mx-auto mb-4 h-8 w-8 text-gray-400" />
+            <h1 className="mb-3 text-2xl font-bold text-gray-900">Login Required</h1>
+            <p className="mb-6 text-gray-600">Sign in to access the admin dashboard.</p>
+            <Link
+              to="/login"
+              className="rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
+            >
+              Log In
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Auth guard: not admin
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="flex min-h-[calc(100vh-260px)] items-center justify-center px-8 py-12">
+          <div className="w-full max-w-xl rounded-2xl border border-red-200 bg-white p-10 text-center shadow-sm">
+            <Shield className="mx-auto mb-4 h-8 w-8 text-red-400" />
+            <h1 className="mb-3 text-2xl font-bold text-gray-900">Access Denied</h1>
+            <p className="mb-6 text-gray-600">This page is restricted to administrators only.</p>
+            <Link
+              to="/"
+              className="rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
+            >
+              Back to Home
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   // Mock data for key metrics
   const metrics = {
@@ -188,6 +253,14 @@ export function AdminDashboardPage() {
       submittedAt: "1 hour ago",
     },
   ];
+
+  const liveTransactions = [
+    { id: "1", type: "donation", amount: 500, description: "Philippines Flood Relief", timestamp: "2 min ago" },
+    { id: "2", type: "roundup", amount: 12, description: "Auto round-up donation", timestamp: "5 min ago" },
+    { id: "3", type: "subscription", amount: 25, description: "Monthly pledge – Turkey Earthquake", timestamp: "12 min ago" },
+    { id: "4", type: "payout", amount: 40000, description: "Bangladesh Cyclone Relief", timestamp: "1 hour ago" },
+    { id: "5", type: "donation", amount: 1000, description: "Turkey Earthquake Recovery", timestamp: "2 hours ago" },
+  ] as const as { id: string; type: string; amount: number; description: string; timestamp: string }[];
 
   const handleApprove = (id: string, type: "payout" | "verification") => {
     if (type === "payout") {
@@ -504,119 +577,7 @@ export function AdminDashboardPage() {
           </div>
         </section>
 
-        {/* Payout Execution Modal */}
-        {payoutModalOpen && payoutTarget && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">
-            <div className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
-              <button
-                onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
-                className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 transition-all hover:bg-gray-200"
-                aria-label="Close payout modal"
-              >
-                <X className="h-5 w-5 text-gray-900" />
-              </button>
-
-              <div className="mb-6 flex items-center gap-3">
-                <div className="rounded-lg bg-teal-500 p-2">
-                  <Send className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Execute Payout</h2>
-                  <p className="text-sm text-gray-600">{payoutTarget.eventName}</p>
-                </div>
-              </div>
-
-              <div className="mb-4 rounded-xl bg-gray-50 p-4">
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-gray-600">Event</span>
-                  <span className="font-medium text-gray-900">{payoutTarget.eventName}</span>
-                </div>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="text-gray-600">AI Confidence</span>
-                  <span className="font-medium text-purple-600">{payoutTarget.aiConfidence}%</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Priority</span>
-                  <span className={`font-medium ${
-                    payoutTarget.severity === "high" ? "text-red-600" : payoutTarget.severity === "medium" ? "text-orange-600" : "text-yellow-600"
-                  }`}>
-                    {payoutTarget.severity.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Payout Amount ({walletAssetCode})
-                </label>
-                <input
-                  type="number"
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(e.target.value)}
-                  placeholder="Amount in display units"
-                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="mb-6">
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Receiver Wallet Address
-                </label>
-                <div className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={receiverWallet}
-                    onChange={(e) => setReceiverWallet(e.target.value)}
-                    placeholder="https://ilp.interledger-test.dev/receiver"
-                    className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
-                  />
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Enter the recipient organization&apos;s Open Payments wallet address
-                </p>
-              </div>
-
-              {payoutError && (
-                <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                  <p className="text-sm text-red-600">{payoutError}</p>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleExecutePayout}
-                  disabled={isPayoutProcessing || !receiverWallet || !payoutAmount}
-                  className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isPayoutProcessing ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      Initiating payout…
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <Send className="h-4 w-4" />
-                      Approve & Send via IDP
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
-                  className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <p className="mt-4 text-center text-xs text-gray-500">
-                You will be redirected to the IDP to authorize this payout from the fund wallet.
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
+        <div className="space-y-3">
             {liveTransactions.map((transaction) => (
               <div
                 key={transaction.id}
@@ -664,7 +625,6 @@ export function AdminDashboardPage() {
               </div>
             ))}
           </div>
-        </div>
         {/* Payout Execution Modal */}
         {payoutModalOpen && payoutTarget && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">

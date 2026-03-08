@@ -15,7 +15,8 @@ const serviceAdapter = new ExperimentalEmptyAdapter();
 const runtime = new CopilotRuntime({
   agents: {
     // Our FastAPI endpoint URL
-    "my_agent": new HttpAgent({url: "http://localhost:8000/"}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    "my_agent": new HttpAgent({url: "http://localhost:8000/"}) as any,
   }   
 });
  

@@ -2,16 +2,41 @@ import { Link, useNavigate } from "react-router";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
 import { useAuth } from "../context/auth-context";
-import { Mail, Lock, Shield } from "lucide-react";
+import { Mail, Lock, Shield, Loader2 } from "lucide-react";
+import { useState } from "react";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    login("sarah.chen@email.com", "password");
+  // Redirect if already authenticated
+  if (isAuthenticated) {
     navigate("/my-giving");
+    return null;
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!email || !password) {
+      setError("Please enter both email and password.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error: authError } = await login(email, password);
+    setIsSubmitting(false);
+
+    if (authError) {
+      setError(authError.message);
+    } else {
+      navigate("/my-giving");
+    }
   };
 
   return (
@@ -33,6 +58,12 @@ export function LoginPage() {
           </div>
           
           <div className="rounded-2xl bg-white p-8 shadow-lg">
+            {error && (
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -43,8 +74,10 @@ export function LoginPage() {
                   <input
                     type="email"
                     placeholder="you@example.com"
-                    defaultValue="sarah.chen@email.com"
-                    className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isSubmitting}
+                    className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -58,8 +91,10 @@ export function LoginPage() {
                   <input
                     type="password"
                     placeholder="••••••••"
-                    defaultValue="password"
-                    className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isSubmitting}
+                    className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -76,9 +111,17 @@ export function LoginPage() {
               
               <button
                 type="submit"
-                className="w-full rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
+                disabled={isSubmitting}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700 disabled:opacity-50"
               >
-                Log In
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Signing in…
+                  </>
+                ) : (
+                  "Log In"
+                )}
               </button>
             </form>
             

@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/login-page";
 import { SignupPage } from "./pages/signup-page";
 import { AdminDashboardPage } from "./pages/admin-dashboard-page";
 import { CommunityImpactPage } from "./pages/community-impact-page";
+import { SettingsPage } from "./pages/settings-page";
 import { NotFoundPage } from "./pages/not-found-page";
 
 export const router = createBrowserRouter([
@@ -28,6 +29,10 @@ export const router = createBrowserRouter([
   {
     path: "/signup",
     Component: SignupPage,
+  },
+  {
+    path: "/settings",
+    Component: SettingsPage,
   },
   {
     path: "/admin",

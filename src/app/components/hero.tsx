@@ -352,7 +352,8 @@ export function Hero() {
 
                 <div ref={globeContainerRef} className="relative z-10 h-full w-full">
                   <Globe
-                    ref={globeRef}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    ref={globeRef as any}
                     width={GLOBE_SIZE}
                     height={GLOBE_SIZE}
                     backgroundColor="rgba(0,0,0,0)"

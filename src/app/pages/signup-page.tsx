@@ -1,31 +1,53 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
-import { Mail, Lock, User, Shield, Globe, AlertTriangle } from "lucide-react";
+import { useAuth } from "../context/auth-context";
+import { Mail, Lock, User, Shield, Globe, Loader2, CheckCircle } from "lucide-react";
 import { useState } from "react";
 
 export function SignupPage() {
+  const navigate = useNavigate();
+  const { signup, isAuthenticated } = useAuth();
+
   const [step, setStep] = useState<1 | 2>(1);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
+
+  // Step 1 fields
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+
+  // Step 2 fields
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [selectedDisasterTypes, setSelectedDisasterTypes] = useState<string[]>([]);
   const [wantsMonthlyPledge, setWantsMonthlyPledge] = useState<boolean>(false);
   const [monthlyAmount, setMonthlyAmount] = useState<string>("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // Redirect if already authenticated
+  if (isAuthenticated && !signupSuccess) {
+    navigate("/my-giving");
+    return null;
+  }
 
   const regions = [
-    { value: "asia-pacific", label: "Asia Pacific" },
-    { value: "americas", label: "Americas" },
-    { value: "europe", label: "Europe" },
-    { value: "middle-east", label: "Middle East" },
-    { value: "africa", label: "Africa" },
+    { value: "ASIA_PACIFIC", label: "Asia Pacific" },
+    { value: "AMERICAS", label: "Americas" },
+    { value: "EUROPE", label: "Europe" },
+    { value: "MIDDLE_EAST", label: "Middle East" },
+    { value: "AFRICA", label: "Africa" },
   ];
 
   const disasterTypes = [
-    { value: "flood", label: "Floods" },
-    { value: "earthquake", label: "Earthquakes" },
-    { value: "wildfire", label: "Wildfires" },
-    { value: "typhoon", label: "Typhoons/Hurricanes" },
-    { value: "drought", label: "Droughts" },
-    { value: "tsunami", label: "Tsunamis" },
+    { value: "FLOOD", label: "Floods" },
+    { value: "EARTHQUAKE", label: "Earthquakes" },
+    { value: "WILDFIRE", label: "Wildfires" },
+    { value: "TYPHOON", label: "Typhoons/Hurricanes" },
+    { value: "DROUGHT", label: "Droughts" },
+    { value: "TSUNAMI", label: "Tsunamis" },
   ];
 
   const toggleRegion = (value: string) => {
@@ -43,6 +65,125 @@ export function SignupPage() {
         : [...prev, value]
     );
   };
+
+  const handleNextStep = () => {
+    setError(null);
+    if (!displayName.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Please enter your email.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    setStep(2);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    // Sign up with Supabase Auth — the trigger creates profile + default preferences
+    const { error: authError } = await signup(email, password, {
+      display_name: displayName,
+      wallet_address: walletAddress || undefined,
+    });
+
+    if (authError) {
+      setIsSubmitting(false);
+      setError(authError.message);
+      return;
+    }
+
+    // After signup + auto-login, update preferences if the user selected any
+    // We need a small delay for the auth context to pick up the new session
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const prefsUpdate: Record<string, unknown> = {};
+      if (selectedDisasterTypes.length > 0) {
+        prefsUpdate.disaster_types = selectedDisasterTypes;
+      }
+      if (selectedRegions.length > 0) {
+        prefsUpdate.geographic_regions = selectedRegions;
+      }
+      if (wantsMonthlyPledge && monthlyAmount) {
+        prefsUpdate.subscription_amount = parseFloat(monthlyAmount);
+      }
+
+      // Update preferences via our API if any were selected
+      if (Object.keys(prefsUpdate).length > 0) {
+        // Get the fresh session token from the stored session
+        const { getSupabaseBrowser } = await import("../../lib/supabase-browser");
+        const supabase = getSupabaseBrowser();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session?.access_token) {
+          await fetch("/api/user/preferences", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify(prefsUpdate),
+          });
+        }
+      }
+    } catch {
+      // Preferences update is non-critical — user can configure later
+      console.warn("Failed to save initial preferences, user can configure in settings.");
+    }
+
+    setIsSubmitting(false);
+    setSignupSuccess(true);
+  };
+
+  if (signupSuccess) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-teal-50 to-white">
+        <Navigation />
+        <div className="flex min-h-[calc(100vh-300px)] items-center justify-center px-8 py-12">
+          <div className="w-full max-w-md text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+            <h1 className="mb-2 text-3xl font-bold text-gray-900">
+              Welcome to DADDE Fund!
+            </h1>
+            <p className="mb-6 text-gray-600">
+              Your account has been created successfully. Check your email to confirm your account, then start making an impact.
+            </p>
+            <div className="flex justify-center gap-3">
+              <Link
+                to="/my-giving"
+                className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 px-6 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
+              >
+                Go to Dashboard
+              </Link>
+              <Link
+                to="/"
+                className="rounded-lg border border-gray-300 px-6 py-3 font-medium text-gray-700 transition-all hover:bg-gray-50"
+              >
+                Explore Campaigns
+              </Link>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50 to-white">
@@ -69,8 +210,14 @@ export function SignupPage() {
               <div className={`h-2 w-20 rounded-full ${step === 1 ? 'bg-teal-500' : 'bg-gray-300'}`} />
               <div className={`h-2 w-2 rounded-full ${step === 2 ? 'bg-teal-500' : 'bg-gray-300'}`} />
             </div>
+
+            {error && (
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
             
-            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               {step === 1 && (
                 <>
                   <div>
@@ -82,6 +229,8 @@ export function SignupPage() {
                       <input
                         type="text"
                         placeholder="John Doe"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
                         className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
                       />
                     </div>
@@ -96,6 +245,8 @@ export function SignupPage() {
                       <input
                         type="email"
                         placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
                       />
                     </div>
@@ -110,9 +261,14 @@ export function SignupPage() {
                       <input
                         type="password"
                         placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
                       />
                     </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Must be at least 6 characters
+                    </p>
                   </div>
                   
                   <div>
@@ -124,6 +280,8 @@ export function SignupPage() {
                       <input
                         type="text"
                         placeholder="$wallet.example.com/alice"
+                        value={walletAddress}
+                        onChange={(e) => setWalletAddress(e.target.value)}
                         className="w-full rounded-lg border-2 border-gray-200 py-3 pl-10 pr-4 focus:border-teal-500 focus:outline-none"
                       />
                     </div>
@@ -134,7 +292,7 @@ export function SignupPage() {
                   
                   <button
                     type="button"
-                    onClick={() => setStep(2)}
+                    onClick={handleNextStep}
                     className="w-full rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
                   >
                     Next
@@ -268,7 +426,12 @@ export function SignupPage() {
                   </div>
                   
                   <label className="flex items-start gap-2 text-sm">
-                    <input type="checkbox" className="mt-0.5 rounded border-gray-300" />
+                    <input
+                      type="checkbox"
+                      checked={agreedToTerms}
+                      onChange={(e) => setAgreedToTerms(e.target.checked)}
+                      className="mt-0.5 rounded border-gray-300"
+                    />
                     <span className="text-gray-600">
                       I agree to the{" "}
                       <a href="#" className="text-teal-600 hover:text-teal-700">
@@ -284,16 +447,25 @@ export function SignupPage() {
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => setStep(1)}
-                      className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 transition-all hover:border-gray-400"
+                      onClick={() => { setStep(1); setError(null); }}
+                      disabled={isSubmitting}
+                      className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 transition-all hover:border-gray-400 disabled:opacity-50"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700"
+                      disabled={isSubmitting}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 py-3 font-medium text-white transition-all hover:from-teal-600 hover:to-cyan-700 disabled:opacity-50"
                     >
-                      Create Account
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Creating Account…
+                        </>
+                      ) : (
+                        "Create Account"
+                      )}
                     </button>
                   </div>
                 </>
