@@ -100,7 +100,7 @@ Donors can see exactly how funds are split across disaster types, regions, and p
 
 ### Community-Voted Rules
 
-The platform enforces payout rules that the community sets together — thresholds, severity weighting, household caps. The AI advises; the community decides.
+The platform enforces payout rules that the community sets together — thresholds, severity weighting, household caps. The AI advises; the community decides via voting.
 
 ![Rules](images/transparency_rules.png)
 
@@ -118,7 +118,7 @@ Data disclaimer: We researched real data, decided on impactful metrics, and then
 
 ### AI Recommendation & Critic Agents
 
-When a claim is submitted, the **Recommendation Agent** (Gemini 2.5 Flash) evaluates the multimodal input — photos, text, location — against community rules and outputs a structured JSON verdict. The **Critic Agent** then reviews it for bias, hallucinations, and errors.
+When a claim is submitted, the **Verifier Agent** (Gemini 2.5 Flash) evaluates the multimodal input — websearch, photos, text, location — to verify the authenticity of the claim. Then a **Recommendation Agent** evaluates the verified claim against community rules and outputs a structured JSON verdict of recommendation, reasoning, curated list of who to be paid. A manual review by an admin is required, after which the funds are instandly disbursed to the claimant's wallet via Open Payments.
 
 ![AI Transparency](images/transparency_ai.png)
 
@@ -161,6 +161,10 @@ After a quick overview of AI-assisted decision making, the admin confirms the pa
 The Critic Agent may flag a claim as suspicious. The admin sees this escalation prominently and can investigate before making any decision.
 
 ![Admin Suspicious](images/admin_dashboard_suspicious.png)
+
+### Demo Trigger
+For demo purposes, the admin can trigger a synthetic disaster alarm to show the AI pipeline and payout flow in action.
+![Demo Trigger](images/demo_trigger.png)
 
 ---
 
