@@ -47,10 +47,7 @@ export function Checkout() {
   const handleConfirmPayment = async () => {
     if (selectedPayment === "open-payments") {
       const trimmedWallet = walletAddress.trim();
-      if (!trimmedWallet) {
-        setWalletError("Please enter your Open Payments wallet address.");
-        return;
-      }
+      // Empty is allowed — server will use SENDER_WALLET_ADDRESS from .env as default
       setWalletError(null);
       setPaymentError(null);
       setIsSubmitting(true);
@@ -67,6 +64,7 @@ export function Checkout() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            // Empty string → server falls back to SENDER_WALLET_ADDRESS from .env
             customerWalletAddress: trimmedWallet,
             vendorAmount: toBaseUnits(vendorAmount.toFixed(2), 2),
             communityAmount: toBaseUnits(roundUpAmount.toFixed(2), 2),
@@ -243,11 +241,16 @@ export function Checkout() {
                         setWalletAddress(e.target.value);
                         if (walletError) setWalletError(null);
                       }}
-                      placeholder="Enter your Open Payments wallet address"
+                      placeholder="e.g. $ilp.interledger-test.dev/you (leave blank to use test default)"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none text-sm"
                     />
                     {walletError && (
                       <p className="mt-2 text-xs text-red-600">{walletError}</p>
+                    )}
+                    {!walletAddress.trim() && !walletError && (
+                      <p className="mt-2 text-xs text-gray-400">
+                        Leave blank to use the default test wallet (<span className="font-mono">$ilp.interledger-test.dev/test-min</span>).
+                      </p>
                     )}
                   </div>
 

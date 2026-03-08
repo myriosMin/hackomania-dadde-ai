@@ -198,8 +198,10 @@ const toNonNegativeIntString = (value, fieldName) => {
 const normalizeWalletAddress = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  if (raw.startsWith("$")) return `https://${raw.slice(1)}`;
-  return raw;
+  // Handle $ilp.interledger-test.dev/... shorthand
+  const withScheme = raw.startsWith("$") ? `https://${raw.slice(1)}` : raw;
+  // Normalise: strip trailing slash for consistent comparison
+  return withScheme.replace(/\/+$/, "");
 };
 
 const initiateSplitContribution = async (payload) => {
@@ -207,22 +209,27 @@ const initiateSplitContribution = async (payload) => {
   const communityAmount = toNonNegativeIntString(payload.communityAmount ?? "0", "communityAmount");
   const hasCommunityLeg = BigInt(communityAmount) > 0n;
   const orderId = typeof payload.orderId === "string" && payload.orderId.trim() ? payload.orderId.trim() : "checkout-order";
-  const customerWalletAddress = normalizeWalletAddress(payload.customerWalletAddress);
-  if (!customerWalletAddress) {
-    throw new Error("customerWalletAddress is required");
-  }
-
   const senderCfg = getWalletConfig("SENDER");
   const vendorCfg = getWalletConfig("VENDOR");
   const communityCfg = getWalletConfig("COMMUNITY");
+
+  // If the customer didn't provide a wallet address, default to the pre-configured SENDER.
+  const rawCustomerWallet = normalizeWalletAddress(payload.customerWalletAddress);
+  const customerWalletAddress = rawCustomerWallet || senderCfg.walletAddressUrl;
 
   const senderClient = await getClient(senderCfg.walletAddressUrl, senderCfg.keyId, senderCfg.privateKey);
   const vendorClient = await getClient(vendorCfg.walletAddressUrl, vendorCfg.keyId, vendorCfg.privateKey);
   const communityClient = await getClient(communityCfg.walletAddressUrl, communityCfg.keyId, communityCfg.privateKey);
 
   const senderWallet = await senderClient.walletAddress.get({ url: senderCfg.walletAddressUrl });
-  if (customerWalletAddress !== senderWallet.id) {
-    throw new Error("Entered wallet does not match configured SENDER_WALLET_ADDRESS");
+  // Compare normalised forms (strip trailing slashes, resolve $ shorthand) so that
+  // $ilp.interledger-test.dev/foo and https://ilp.interledger-test.dev/foo both match.
+  const normalisedSenderId = normalizeWalletAddress(senderWallet.id);
+  if (customerWalletAddress !== normalisedSenderId) {
+    throw new Error(
+      `Entered wallet address (${customerWalletAddress}) does not match the configured SENDER wallet (${normalisedSenderId}). ` +
+      "For this demo the sender keys in .env must correspond to the wallet address used at checkout.",
+    );
   }
   const vendorWallet = await vendorClient.walletAddress.get({ url: vendorCfg.walletAddressUrl });
   const communityWallet = await communityClient.walletAddress.get({ url: communityCfg.walletAddressUrl });
