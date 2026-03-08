@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 
 import { CopilotKit } from "@copilotkit/react-core";
+import "@copilotkit/react-ui/styles.css";
+import { AuthProvider } from "./context/auth-context";
+import { DaddeCopilot } from "./components/dadde-copilot";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,9 +19,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={"antialiased"}>
-        <CopilotKit runtimeUrl="/api/copilotkit" agent="my_agent">
-          {children}
-        </CopilotKit>
+        <AuthProvider>
+          <CopilotKit runtimeUrl="/api/copilotkit" agent="dadde_fund_agent">
+            {children}
+            <DaddeCopilot />
+          </CopilotKit>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -2,7 +2,7 @@
 
 import { ArrowRight, Info } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useNavigate } from "react-router";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type GlobeMaterial = {
@@ -171,7 +171,7 @@ function findNearestDisaster(lat: number, lng: number) {
 }
 
 export function Hero() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const globeRef = useRef<GlobeInstance | null>(null);
   const globeContainerRef = useRef<HTMLDivElement | null>(null);
   const [countryFeatures, setCountryFeatures] = useState<CountryFeature[]>([]);
@@ -274,7 +274,7 @@ export function Hero() {
 
   const handleDonateClick = () => {
     // Go directly to payment page - collective disaster fund
-    navigate("/payment/collective");
+    router.push("/payment/collective");
   };
 
   const handleLearnHowItWorksClick = () => {

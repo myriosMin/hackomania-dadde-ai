@@ -25,7 +25,7 @@ def get_vision_model() -> str:
 
 
 def get_adk_model() -> str:
-    return os.getenv("GEMINI_ADK_MODEL", "gemini-2.0-flash")
+    return os.getenv("GEMINI_ADK_MODEL", "gemini-2.5-flash")
 
 
 def load_image_bytes(path_str: str) -> tuple[bytes, str]:

@@ -1,4 +1,4 @@
-# DADDE Fund
+# DADDE's FUND
 
 **AI-Mediated Decentralized Community Aid** — A community-powered emergency fund platform that uses dual-AI verification, Interledger Open Payments, and ClickHouse real-time analytics to deliver transparent, instant disaster relief.
 

@@ -1,7 +1,7 @@
 [project]
-name = "proverbs-agent"
+name = "daddes-fund-agent"
 version = "0.1.0"
-description = "ADK Proverbs Agent with shared state"
+description = "Dadde's Fund AI Agent – Disaster Verification & Claim Recommendation Pipeline"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
@@ -11,4 +11,6 @@ dependencies = [
     "google-adk",
     "google-genai",
     "ag-ui-adk",
+    "httpx",
+    "langfuse",
 ]

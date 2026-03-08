@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { MapPin, Users, AlertCircle, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -61,10 +63,10 @@ export const campaigns: Campaign[] = [
   }
 ];
 
-function CampaignCard({ 
+function CampaignCard({
   campaign,
-  onFocus 
-}: { 
+  onFocus
+}: {
   campaign: Campaign;
   onFocus: (campaign: Campaign) => void;
 }) {
@@ -75,12 +77,12 @@ function CampaignCard({
   };
 
   return (
-    <div 
+    <div
       onClick={() => onFocus(campaign)}
       className="cursor-pointer overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-all hover:shadow-lg hover:border-teal-200"
     >
       <div className="relative h-48 overflow-hidden">
-        <ImageWithFallback 
+        <ImageWithFallback
           src={campaign.imageUrl}
           alt={campaign.name}
           className="h-full w-full object-cover"
@@ -91,7 +93,7 @@ function CampaignCard({
           </span>
         </div>
       </div>
-      
+
       <div className="p-6">
         <div className="mb-2 flex items-center gap-2">
           <span className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
@@ -102,20 +104,20 @@ function CampaignCard({
             {campaign.location}
           </span>
         </div>
-        
+
         <h3 className="mb-2 text-xl font-semibold text-gray-900">
           {campaign.name}
         </h3>
-        
+
         <p className="mb-4 text-sm text-gray-600">
           {campaign.description}
         </p>
-        
+
         <div className="flex items-center gap-1 text-sm text-gray-600">
           <Users className="h-4 w-4" />
           <span>{campaign.affectedPopulation} affected</span>
         </div>
-        
+
         <p className="mt-3 text-center text-xs text-gray-500">
           Click to learn more
         </p>
@@ -128,14 +130,14 @@ export function DisasterCampaigns() {
   const [focusedCampaign, setFocusedCampaign] = useState<Campaign | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
-  
+
   const handleFocus = (campaign: Campaign) => {
     const index = campaigns.findIndex(c => c.id === campaign.id);
     setFocusedIndex(index);
     setFocusedCampaign(campaign);
     setSlideDirection(null);
   };
-  
+
   const handleCloseFocus = () => {
     setFocusedCampaign(null);
     setFocusedIndex(null);
@@ -144,7 +146,7 @@ export function DisasterCampaigns() {
 
   const handleNavigate = (direction: "prev" | "next") => {
     if (focusedIndex === null) return;
-    
+
     if (direction === "prev" && focusedIndex > 0) {
       setSlideDirection("right");
       setTimeout(() => {
@@ -173,7 +175,7 @@ export function DisasterCampaigns() {
           <p className="mb-12 text-gray-600">
             These campaigns are prioritized by urgency, relevance, and impact. Your support makes an immediate difference.
           </p>
-          
+
           <div className="grid grid-cols-2 gap-6">
             {campaigns.map((campaign) => (
               <CampaignCard
@@ -183,7 +185,7 @@ export function DisasterCampaigns() {
               />
             ))}
           </div>
-          
+
           {/* Pagination Dots */}
           {focusedIndex !== null && (
             <div className="mt-8 flex justify-center gap-2">
@@ -191,21 +193,20 @@ export function DisasterCampaigns() {
                 <button
                   key={index}
                   onClick={() => handleFocus(campaigns[index])}
-                  className={`h-2 rounded-full transition-all ${
-                    focusedIndex === index
+                  className={`h-2 rounded-full transition-all ${focusedIndex === index
                       ? "w-8 bg-teal-500"
                       : "w-2 bg-gray-300 hover:bg-gray-400"
-                  }`}
+                    }`}
                 />
               ))}
             </div>
           )}
         </div>
       </section>
-      
+
       {/* Stage Focus Modal */}
       {focusedCampaign && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-8"
           onClick={handleCloseFocus}
         >
@@ -235,7 +236,7 @@ export function DisasterCampaigns() {
             )}
 
             {/* Modal Card */}
-            <div 
+            <div
               className="relative w-full rounded-2xl bg-white shadow-2xl overflow-hidden animate-[scale-up_0.3s_ease-out]"
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -248,9 +249,9 @@ export function DisasterCampaigns() {
               >
                 <X className="h-6 w-6" />
               </button>
-              
+
               <div className="relative h-96 overflow-hidden">
-                <ImageWithFallback 
+                <ImageWithFallback
                   src={focusedCampaign.imageUrl}
                   alt={focusedCampaign.name}
                   className="h-full w-full object-cover"
@@ -258,11 +259,10 @@ export function DisasterCampaigns() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                 <div className="absolute bottom-8 left-8 right-8">
                   <div className="mb-4 flex items-center gap-3">
-                    <span className={`rounded-full px-4 py-1.5 text-sm font-medium ${
-                      focusedCampaign.urgency === 'Critical' ? 'bg-red-100 text-red-700' :
-                      focusedCampaign.urgency === 'High' ? 'bg-orange-100 text-orange-700' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
+                    <span className={`rounded-full px-4 py-1.5 text-sm font-medium ${focusedCampaign.urgency === 'Critical' ? 'bg-red-100 text-red-700' :
+                        focusedCampaign.urgency === 'High' ? 'bg-orange-100 text-orange-700' :
+                          'bg-yellow-100 text-yellow-700'
+                      }`}>
                       {focusedCampaign.urgency} Urgency
                     </span>
                     <span className="rounded-full bg-white/90 px-4 py-1.5 text-sm font-medium text-gray-700">
@@ -278,7 +278,7 @@ export function DisasterCampaigns() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-8">
                 <div className="mb-6">
                   <h3 className="mb-3 text-xl font-semibold text-gray-900">About This Campaign</h3>
@@ -286,7 +286,7 @@ export function DisasterCampaigns() {
                     {focusedCampaign.description}
                   </p>
                 </div>
-                
+
                 <div className="mb-6 grid grid-cols-3 gap-6">
                   <div className="rounded-lg bg-teal-50 p-4">
                     <h4 className="mb-2 text-sm font-semibold text-gray-900">Impact Details</h4>
@@ -304,11 +304,11 @@ export function DisasterCampaigns() {
                     <h4 className="mb-2 text-sm font-semibold text-gray-900">Verification Status</h4>
                     <div className="flex items-center gap-2">
                       <Check className="h-5 w-5 text-teal-600" />
-                      <span className="text-sm font-medium text-teal-600">Verified by DADDE Fund</span>
+                      <span className="text-sm font-medium text-teal-600">Verified by DADDE's FUND</span>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg bg-gray-50 p-4">
                   <div className="flex items-center gap-2 text-gray-600">
                     <Users className="h-5 w-5" />
@@ -317,7 +317,7 @@ export function DisasterCampaigns() {
                 </div>
               </div>
             </div>
-            
+
             {/* Dots Indicator - Below the card */}
             <div className="mt-6 flex justify-center gap-2">
               {campaigns.map((_, index) => (
@@ -327,18 +327,17 @@ export function DisasterCampaigns() {
                     e.stopPropagation();
                     handleFocus(campaigns[index]);
                   }}
-                  className={`h-2 rounded-full transition-all ${
-                    focusedIndex === index
+                  className={`h-2 rounded-full transition-all ${focusedIndex === index
                       ? "w-8 bg-white"
                       : "w-2 bg-white/50 hover:bg-white/70"
-                  }`}
+                    }`}
                 />
               ))}
             </div>
           </div>
         </div>
       )}
-      
+
       <style>{`
         @keyframes scale-up {
           from {
