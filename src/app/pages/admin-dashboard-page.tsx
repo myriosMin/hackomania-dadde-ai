@@ -4,19 +4,13 @@ import {
   DollarSign,
   AlertTriangle,
   Clock,
+  Shield,
+  MapPin,
+  Users,
   CheckCircle,
   XCircle,
   Edit,
-  MapPin,
-  Users,
-  TrendingUp,
-  Activity,
-  ArrowDown,
-  ArrowUp,
-  Shield,
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
   X,
   Loader2,
   CheckCircle2,
@@ -47,20 +41,18 @@ interface VerificationRequest {
   submittedAt: string;
 }
 
-interface Transaction {
+interface CampaignProgress {
   id: string;
-  type: "donation" | "roundup" | "subscription" | "payout";
-  amount: number;
-  description: string;
-  timestamp: string;
+  name: string;
+  location: string;
+  progress: number;
+  raised: number;
+  target: number;
 }
 
 export function AdminDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTab, setSelectedTab] = useState<"all" | "payouts" | "verifications">("all");
-  const [focusedCardIndex, setFocusedCardIndex] = useState<number | null>(null);
-  const [focusedCardType, setFocusedCardType] = useState<"payout" | "verification" | null>(null);
-  const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
 
   // Payout execution state
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
@@ -111,14 +103,41 @@ export function AdminDashboardPage() {
     pendingApprovals: 5,
   };
 
-  // Mock payout requests
+  const campaignProgress: CampaignProgress[] = [
+    {
+      id: "1",
+      name: "Turkey Earthquake Recovery",
+      location: "Southeastern Turkey",
+      progress: 92,
+      raised: 250000,
+      target: 270000,
+    },
+    {
+      id: "2",
+      name: "Philippines Flood Relief",
+      location: "Manila, Philippines",
+      progress: 75,
+      raised: 120000,
+      target: 160000,
+    },
+    {
+      id: "3",
+      name: "Bangladesh Cyclone Relief",
+      location: "Cox's Bazar, Bangladesh",
+      progress: 85,
+      raised: 150000,
+      target: 176000,
+    },
+  ];
+
   const payoutRequests: PayoutRequest[] = [
     {
       id: "1",
       eventName: "Philippines Flood Relief",
       suggestedAmount: 40000,
       recipients: 3,
-      reason: "Severe flooding affecting 80,000 residents. Immediate need for emergency shelter, clean water, and medical supplies.",
+      reason:
+        "Severe flooding affecting 80,000 residents. Immediate need for emergency shelter, clean water, and medical supplies.",
       severity: "high",
       aiConfidence: 92,
     },
@@ -127,13 +146,13 @@ export function AdminDashboardPage() {
       eventName: "Turkey Earthquake Recovery",
       suggestedAmount: 75000,
       recipients: 5,
-      reason: "7.8 magnitude earthquake caused widespread destruction. 120,000 people displaced, urgent need for temporary housing.",
+      reason:
+        "7.8 magnitude earthquake caused widespread destruction. 120,000 people displaced, urgent need for temporary housing.",
       severity: "high",
       aiConfidence: 95,
     },
   ];
 
-  // Mock verification requests
   const verificationRequests: VerificationRequest[] = [
     {
       id: "1",
@@ -142,7 +161,8 @@ export function AdminDashboardPage() {
       reportedBy: "Local Relief NGO Indonesia",
       aiConfidence: 85,
       sourcesFound: 4,
-      description: "Heavy monsoon rains causing severe flooding in multiple districts. Over 15,000 families evacuated.",
+      description:
+        "Heavy monsoon rains causing severe flooding in multiple districts. Over 15,000 families evacuated.",
       submittedAt: "2 hours ago",
     },
     {
@@ -152,7 +172,8 @@ export function AdminDashboardPage() {
       reportedBy: "Fire Relief Foundation",
       aiConfidence: 78,
       sourcesFound: 6,
-      description: "Fast-moving wildfires threatening residential areas. 5,000+ acres burned, evacuation orders issued.",
+      description:
+        "Fast-moving wildfires threatening residential areas. 5,000+ acres burned, evacuation orders issued.",
       submittedAt: "5 hours ago",
     },
     {
@@ -162,63 +183,11 @@ export function AdminDashboardPage() {
       reportedBy: "Bangladesh Red Crescent",
       aiConfidence: 91,
       sourcesFound: 8,
-      description: "Category 3 cyclone making landfall. Coastal communities at severe risk, 200,000+ people in evacuation zones.",
+      description:
+        "Category 3 cyclone making landfall. Coastal communities at severe risk, 200,000+ people in evacuation zones.",
       submittedAt: "1 hour ago",
     },
   ];
-
-  // Mock live transactions
-  const [liveTransactions] = useState<Transaction[]>([
-    {
-      id: "1",
-      type: "donation",
-      amount: 100,
-      description: "Philippines Flood Relief",
-      timestamp: "2 min ago",
-    },
-    {
-      id: "2",
-      type: "roundup",
-      amount: 0.35,
-      description: "Kopi Corner purchase",
-      timestamp: "3 min ago",
-    },
-    {
-      id: "3",
-      type: "subscription",
-      amount: 25,
-      description: "Monthly pledge — User #4921",
-      timestamp: "5 min ago",
-    },
-    {
-      id: "4",
-      type: "donation",
-      amount: 250,
-      description: "Turkey Earthquake Recovery",
-      timestamp: "7 min ago",
-    },
-    {
-      id: "5",
-      type: "payout",
-      amount: 20000,
-      description: "Local Flood Relief NGO",
-      timestamp: "12 min ago",
-    },
-    {
-      id: "6",
-      type: "roundup",
-      amount: 0.78,
-      description: "Coffee Shop purchase",
-      timestamp: "15 min ago",
-    },
-    {
-      id: "7",
-      type: "donation",
-      amount: 50,
-      description: "Collective Disaster Fund",
-      timestamp: "18 min ago",
-    },
-  ]);
 
   const handleApprove = (id: string, type: "payout" | "verification") => {
     if (type === "payout") {
@@ -284,7 +253,6 @@ export function AdminDashboardPage() {
 
   const handleReject = (id: string, type: "payout" | "verification") => {
     console.log(`Rejected ${type}:`, id);
-    // Handle rejection logic
   };
 
   const handleModify = (id: string) => {
@@ -300,62 +268,29 @@ export function AdminDashboardPage() {
   };
 
   const handleRequestInfo = (id: string) => {
-    console.log(`Request more info:`, id);
-    // Handle request more info logic
+    console.log("Request more info:", id);
   };
 
   const filteredPayouts = selectedTab === "verifications" ? [] : payoutRequests;
   const filteredVerifications = selectedTab === "payouts" ? [] : verificationRequests;
 
-  // Combine all cards for gallery navigation
-  const allCards = [
-    ...filteredPayouts.map((p, i) => ({ type: "payout" as const, data: p, originalIndex: i })),
-    ...filteredVerifications.map((v, i) => ({ type: "verification" as const, data: v, originalIndex: i })),
-  ];
-
-  const handleCardClick = (index: number, type: "payout" | "verification") => {
-    setFocusedCardIndex(index);
-    setFocusedCardType(type);
-  };
-
-  const handleCloseFocus = () => {
-    setFocusedCardIndex(null);
-    setFocusedCardType(null);
-  };
-
-  const handleNavigate = (direction: "prev" | "next") => {
-    if (focusedCardIndex === null) return;
-    
-    if (direction === "prev" && focusedCardIndex > 0) {
-      const prevCard = allCards[focusedCardIndex - 1];
-      setFocusedCardIndex(focusedCardIndex - 1);
-      setFocusedCardType(prevCard.type);
-      setSlideDirection("left");
-    } else if (direction === "next" && focusedCardIndex < allCards.length - 1) {
-      const nextCard = allCards[focusedCardIndex + 1];
-      setFocusedCardIndex(focusedCardIndex + 1);
-      setFocusedCardType(nextCard.type);
-      setSlideDirection("right");
-    }
-  };
-
-  const focusedCard = focusedCardIndex !== null ? allCards[focusedCardIndex] : null;
+  const mostCompletedCampaign = campaignProgress.reduce((best, campaign) => {
+    if (campaign.progress > best.progress) return campaign;
+    return best;
+  }, campaignProgress[0]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <div className="min-h-screen bg-gray-50">
       <Navigation />
 
-      <div className="mx-auto max-w-7xl px-8 py-12">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 p-3">
-              <Shield className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-              <p className="text-gray-600">Control center for DADDE Fund operations</p>
-            </div>
+      <div className="mx-auto max-w-7xl px-8 py-10">
+        <div className="mb-8 flex items-center gap-3">
+          <div className="rounded-xl bg-teal-600 p-3">
+            <Shield className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+            <p className="text-gray-600">Operations overview and approval queue</p>
           </div>
         </div>
 
@@ -385,95 +320,97 @@ export function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TOP SECTION - Key Metrics */}
-        <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-          {/* Fund Balance */}
-          <div className="rounded-2xl border-2 border-teal-200 bg-gradient-to-br from-teal-50 to-cyan-50 p-6">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="rounded-lg bg-teal-500 p-2">
-                <DollarSign className="h-5 w-5 text-white" />
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-8">
+            <p className="text-sm font-semibold text-gray-500">Most Completed Campaign</p>
+            <div className="mt-4 flex flex-col gap-6 md:flex-row md:items-center">
+              <div
+                className="mx-auto flex h-48 w-48 items-center justify-center rounded-full"
+                style={{
+                  background: `conic-gradient(#0d9488 ${mostCompletedCampaign.progress * 3.6}deg, #e5e7eb 0deg)`,
+                }}
+              >
+                <div className="flex h-36 w-36 flex-col items-center justify-center rounded-full bg-white text-center">
+                  <p className="text-4xl font-bold text-gray-900">{mostCompletedCampaign.progress}%</p>
+                  <p className="text-xs font-medium text-gray-500">completion</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1 text-xs font-medium text-teal-600">
-                <TrendingUp className="h-3 w-3" />
-                +12.5%
-              </div>
-            </div>
-            <h3 className="mb-1 text-sm font-medium text-gray-600">Community Fund Balance</h3>
-            <p className="text-3xl font-bold text-gray-900">
-              ${metrics.fundBalance.toLocaleString()}
-            </p>
-            <p className="mt-2 text-xs text-gray-500">Total available for disaster payouts</p>
-          </div>
 
-          {/* Active Disasters */}
-          <div className="rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-6">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="rounded-lg bg-orange-500 p-2">
-                <AlertTriangle className="h-5 w-5 text-white" />
-              </div>
-              <div className="flex items-center gap-1 text-xs font-medium text-orange-600">
-                <Activity className="h-3 w-3" />
-                Active
+              <div className="flex-1">
+                <h2 className="text-2xl font-semibold text-gray-900">{mostCompletedCampaign.name}</h2>
+                <p className="mt-1 flex items-center gap-1 text-sm text-gray-600">
+                  <MapPin className="h-4 w-4" />
+                  {mostCompletedCampaign.location}
+                </p>
+                <p className="mt-4 text-sm text-gray-600">
+                  Raised <span className="font-semibold text-gray-900">${mostCompletedCampaign.raised.toLocaleString()}</span>{" "}
+                  of <span className="font-semibold text-gray-900">${mostCompletedCampaign.target.toLocaleString()}</span>
+                </p>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full rounded-full bg-teal-600"
+                    style={{ width: `${mostCompletedCampaign.progress}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <h3 className="mb-1 text-sm font-medium text-gray-600">Active Verified Disasters</h3>
-            <p className="text-3xl font-bold text-gray-900">{metrics.activeDisasters}</p>
-            <p className="mt-2 text-xs text-gray-500">Currently receiving donations</p>
-          </div>
+          </section>
 
-          {/* Pending Approvals */}
-          <div className="rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 p-6">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="rounded-lg bg-purple-500 p-2">
-                <Clock className="h-5 w-5 text-white" />
+          <aside className="space-y-4 lg:col-span-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-gray-500">
+                <DollarSign className="h-4 w-4" />
+                <p className="text-sm font-medium">Community Fund Balance</p>
               </div>
-              <div className="flex items-center gap-1 text-xs font-medium text-purple-600">
-                <AlertCircle className="h-3 w-3" />
-                Action needed
-              </div>
+              <p className="text-3xl font-bold text-gray-900">${metrics.fundBalance.toLocaleString()}</p>
             </div>
-            <h3 className="mb-1 text-sm font-medium text-gray-600">Pending Approvals</h3>
-            <p className="text-3xl font-bold text-gray-900">{metrics.pendingApprovals}</p>
-            <p className="mt-2 text-xs text-gray-500">Payouts & disaster verifications</p>
-          </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-gray-500">
+                <AlertTriangle className="h-4 w-4" />
+                <p className="text-sm font-medium">Active Verified Disasters</p>
+              </div>
+              <p className="text-3xl font-bold text-gray-900">{metrics.activeDisasters}</p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-gray-500">
+                <Clock className="h-4 w-4" />
+                <p className="text-sm font-medium">Pending Approvals</p>
+              </div>
+              <p className="text-3xl font-bold text-gray-900">{metrics.pendingApprovals}</p>
+            </div>
+          </aside>
         </div>
 
-        {/* MIDDLE SECTION - Admin Inbox */}
-        <div className="mb-8 rounded-2xl border-2 border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
+        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Admin Inbox</h2>
-              <p className="text-sm text-gray-600">Review and approve pending actions</p>
+              <p className="text-sm text-gray-600">Review requests and take action</p>
             </div>
-            
-            {/* Tab Filter */}
+
             <div className="flex gap-2 rounded-lg bg-gray-100 p-1">
               <button
                 onClick={() => setSelectedTab("all")}
-                className={`rounded-md px-4 py-2 text-xs font-medium transition-all ${
-                  selectedTab === "all"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
+                className={`rounded-md px-4 py-2 text-xs font-medium transition ${
+                  selectedTab === "all" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600"
                 }`}
               >
                 All ({payoutRequests.length + verificationRequests.length})
               </button>
               <button
                 onClick={() => setSelectedTab("payouts")}
-                className={`rounded-md px-4 py-2 text-xs font-medium transition-all ${
-                  selectedTab === "payouts"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
+                className={`rounded-md px-4 py-2 text-xs font-medium transition ${
+                  selectedTab === "payouts" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600"
                 }`}
               >
                 Payouts ({payoutRequests.length})
               </button>
               <button
                 onClick={() => setSelectedTab("verifications")}
-                className={`rounded-md px-4 py-2 text-xs font-medium transition-all ${
-                  selectedTab === "verifications"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
+                className={`rounded-md px-4 py-2 text-xs font-medium transition ${
+                  selectedTab === "verifications" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600"
                 }`}
               >
                 Verifications ({verificationRequests.length})
@@ -481,350 +418,201 @@ export function AdminDashboardPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Payout Requests */}
-            {filteredPayouts.map((request, index) => {
-              const globalIndex = index;
-              return (
-                <div
-                  key={request.id}
-                  onClick={() => handleCardClick(globalIndex, "payout")}
-                  className="cursor-pointer rounded-xl border-2 border-red-200 bg-gradient-to-r from-red-50 to-orange-50 p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
-                >
-                  <div className="mb-3 flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
-                          PAYOUT REQUEST
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            request.severity === "high"
-                              ? "bg-red-100 text-red-700"
-                              : request.severity === "medium"
-                              ? "bg-orange-100 text-orange-700"
-                              : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {request.severity.toUpperCase()} PRIORITY
-                        </span>
-                      </div>
-                      <h3 className="mb-1 text-lg font-bold text-gray-900">{request.eventName}</h3>
-                      <div className="mb-3 flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-1 font-bold text-teal-600">
-                          <DollarSign className="h-4 w-4" />
-                          ${request.suggestedAmount.toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
-                          {request.recipients} recipients
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600">Click to review and take action</p>
+          <div className="space-y-3">
+            {filteredPayouts.map((request) => (
+              <article key={request.id} className="rounded-xl border border-gray-200 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Payout Request</p>
+                    <h3 className="text-lg font-semibold text-gray-900">{request.eventName}</h3>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                      <span className="font-medium text-gray-900">${request.suggestedAmount.toLocaleString()}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        {request.recipients} recipients
+                      </span>
+                      <span>AI {request.aiConfidence}%</span>
                     </div>
+                    <p className="mt-2 line-clamp-2 text-sm text-gray-600">{request.reason}</p>
                   </div>
-                </div>
-              );
-            })}
 
-            {/* Verification Requests */}
-            {filteredVerifications.map((request, index) => {
-              const globalIndex = filteredPayouts.length + index;
-              return (
-                <div
-                  key={request.id}
-                  onClick={() => handleCardClick(globalIndex, "verification")}
-                  className="cursor-pointer rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
-                >
-                  <div className="mb-3 flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="rounded-full bg-blue-500 px-2 py-0.5 text-xs font-bold text-white">
-                          VERIFICATION REQUEST
-                        </span>
-                        <span className="text-xs text-gray-500">{request.submittedAt}</span>
-                      </div>
-                      <h3 className="mb-1 text-lg font-bold text-gray-900">{request.disasterName}</h3>
-                      <div className="mb-3 flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {request.location}
-                        </span>
-                        <span className="flex items-center gap-1 font-medium text-blue-600">
-                          <Shield className="h-4 w-4" />
-                          AI: {request.aiConfidence}%
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600">Click to review and take action</p>
-                    </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => handleApprove(request.id, "payout")}
+                      className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+                    >
+                      <CheckCircle className="mr-1 inline h-4 w-4" /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleModify(request.id)}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <Edit className="mr-1 inline h-4 w-4" /> Modify
+                    </button>
+                    <button
+                      onClick={() => handleReject(request.id, "payout")}
+                      className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <XCircle className="mr-1 inline h-4 w-4" /> Reject
+                    </button>
                   </div>
                 </div>
-              );
-            })}
+              </article>
+            ))}
+
+            {filteredVerifications.map((request) => (
+              <article key={request.id} className="rounded-xl border border-gray-200 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Verification Request</p>
+                    <h3 className="text-lg font-semibold text-gray-900">{request.disasterName}</h3>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-4 w-4" />
+                        {request.location}
+                      </span>
+                      <span>AI {request.aiConfidence}%</span>
+                      <span>{request.sourcesFound} sources</span>
+                      <span>{request.submittedAt}</span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm text-gray-600">{request.description}</p>
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => handleApprove(request.id, "verification")}
+                      className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+                    >
+                      <CheckCircle className="mr-1 inline h-4 w-4" /> Approve
+                    </button>
+                    <button
+                      onClick={() => handleRequestInfo(request.id)}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <AlertCircle className="mr-1 inline h-4 w-4" /> Request Info
+                    </button>
+                    <button
+                      onClick={() => handleReject(request.id, "verification")}
+                      className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <XCircle className="mr-1 inline h-4 w-4" /> Reject
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
-          
-          {/* Pagination Dots */}
-          {allCards.length > 0 && (
-            <div className="mt-6 flex justify-center gap-2">
-              {allCards.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => {
-                    const card = allCards[index];
-                    handleCardClick(index, card.type);
-                  }}
-                  className={`h-2 rounded-full transition-all ${
-                    focusedCardIndex === index
-                      ? "w-8 bg-teal-500"
-                      : "w-2 bg-gray-300 hover:bg-gray-400"
-                  }`}
+        </section>
+
+        {/* Payout Execution Modal */}
+        {payoutModalOpen && payoutTarget && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
+              <button
+                onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 transition-all hover:bg-gray-200"
+                aria-label="Close payout modal"
+              >
+                <X className="h-5 w-5 text-gray-900" />
+              </button>
+
+              <div className="mb-6 flex items-center gap-3">
+                <div className="rounded-lg bg-teal-500 p-2">
+                  <Send className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Execute Payout</h2>
+                  <p className="text-sm text-gray-600">{payoutTarget.eventName}</p>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-xl bg-gray-50 p-4">
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">Event</span>
+                  <span className="font-medium text-gray-900">{payoutTarget.eventName}</span>
+                </div>
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">AI Confidence</span>
+                  <span className="font-medium text-purple-600">{payoutTarget.aiConfidence}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Priority</span>
+                  <span className={`font-medium ${
+                    payoutTarget.severity === "high" ? "text-red-600" : payoutTarget.severity === "medium" ? "text-orange-600" : "text-yellow-600"
+                  }`}>
+                    {payoutTarget.severity.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Payout Amount ({walletAssetCode})
+                </label>
+                <input
+                  type="number"
+                  value={payoutAmount}
+                  onChange={(e) => setPayoutAmount(e.target.value)}
+                  placeholder="Amount in display units"
+                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
                 />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Expanded Card Modal */}
-        {focusedCard && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8">
-            <div className="relative w-full max-w-4xl">
-              {/* Navigation Arrows - Outside the card */}
-              {focusedCardIndex !== null && focusedCardIndex > 0 && (
-                <button
-                  onClick={() => handleNavigate("prev")}
-                  className="absolute -left-16 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white p-3 shadow-lg transition-all hover:bg-gray-100 hover:scale-110"
-                >
-                  <ChevronLeft className="h-6 w-6 text-gray-900" />
-                </button>
-              )}
-              {focusedCardIndex !== null && focusedCardIndex < allCards.length - 1 && (
-                <button
-                  onClick={() => handleNavigate("next")}
-                  className="absolute -right-16 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white p-3 shadow-lg transition-all hover:bg-gray-100 hover:scale-110"
-                >
-                  <ChevronRight className="h-6 w-6 text-gray-900" />
-                </button>
-              )}
-
-              {/* Card Content */}
-              <div className="relative max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8 shadow-2xl">
-                {/* Close Button */}
-                <button
-                  onClick={handleCloseFocus}
-                  className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 transition-all hover:bg-gray-200"
-                >
-                  <X className="h-5 w-5 text-gray-900" />
-                </button>
-
-                {/* Payout Request Expanded */}
-                {focusedCard.type === "payout" && (
-                  <div>
-                    <div className="mb-4 flex items-center gap-2">
-                      <span className="rounded-full bg-red-500 px-3 py-1 text-sm font-bold text-white">
-                        PAYOUT REQUEST
-                      </span>
-                      <span
-                        className={`rounded-full px-3 py-1 text-sm font-medium ${
-                          (focusedCard.data as PayoutRequest).severity === "high"
-                            ? "bg-red-100 text-red-700"
-                            : (focusedCard.data as PayoutRequest).severity === "medium"
-                            ? "bg-orange-100 text-orange-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
-                      >
-                        {(focusedCard.data as PayoutRequest).severity.toUpperCase()} PRIORITY
-                      </span>
-                    </div>
-                    
-                    <h2 className="mb-6 text-3xl font-bold text-gray-900">
-                      {(focusedCard.data as PayoutRequest).eventName}
-                    </h2>
-                    
-                    <div className="mb-6 grid grid-cols-3 gap-4">
-                      <div className="rounded-xl bg-teal-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">Suggested Amount</p>
-                        <p className="text-2xl font-bold text-teal-600">
-                          ${(focusedCard.data as PayoutRequest).suggestedAmount.toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-blue-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">Recipients</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                          {(focusedCard.data as PayoutRequest).recipients} verified orgs
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-purple-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">AI Confidence</p>
-                        <p className="text-2xl font-bold text-purple-600">
-                          {(focusedCard.data as PayoutRequest).aiConfidence}%
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="mb-6 rounded-xl bg-gray-50 p-4">
-                      <h3 className="mb-2 font-semibold text-gray-900">AI Reasoning</h3>
-                      <p className="text-gray-700">{(focusedCard.data as PayoutRequest).reason}</p>
-                    </div>
-                    
-                    <div className="mb-4 rounded-xl bg-amber-50 p-4">
-                      <h3 className="mb-2 font-semibold text-gray-900">Distribution Details</h3>
-                      <p className="text-sm text-gray-700">
-                        Funds will be distributed to {(focusedCard.data as PayoutRequest).recipients} verified organizations through Open Payments protocol within 48-72 hours of approval. All recipients have been validated by our AI verification system.
-                      </p>
-                    </div>
-                    
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => {
-                          handleApprove((focusedCard.data as PayoutRequest).id, "payout");
-                          handleCloseFocus();
-                        }}
-                        className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600"
-                      >
-                        <CheckCircle className="mr-2 inline h-5 w-5" />
-                        Approve Payout
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleModify((focusedCard.data as PayoutRequest).id);
-                          handleCloseFocus();
-                        }}
-                        className="rounded-lg border-2 border-gray-300 bg-white px-6 py-3 font-medium text-gray-700 transition-all hover:border-gray-400"
-                      >
-                        <Edit className="mr-2 inline h-5 w-5" />
-                        Modify
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleReject((focusedCard.data as PayoutRequest).id, "payout");
-                          handleCloseFocus();
-                        }}
-                        className="rounded-lg border-2 border-red-300 bg-white px-6 py-3 font-medium text-red-600 transition-all hover:border-red-400 hover:bg-red-50"
-                      >
-                        <XCircle className="mr-2 inline h-5 w-5" />
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Verification Request Expanded */}
-                {focusedCard.type === "verification" && (
-                  <div>
-                    <div className="mb-4 flex items-center gap-2">
-                      <span className="rounded-full bg-blue-500 px-3 py-1 text-sm font-bold text-white">
-                        VERIFICATION REQUEST
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        Submitted {(focusedCard.data as VerificationRequest).submittedAt}
-                      </span>
-                    </div>
-                    
-                    <h2 className="mb-6 text-3xl font-bold text-gray-900">
-                      {(focusedCard.data as VerificationRequest).disasterName}
-                    </h2>
-                    
-                    <div className="mb-6 grid grid-cols-3 gap-4">
-                      <div className="rounded-xl bg-blue-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">Location</p>
-                        <p className="text-lg font-bold text-blue-600">
-                          {(focusedCard.data as VerificationRequest).location}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-purple-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">AI Confidence</p>
-                        <p className="text-2xl font-bold text-purple-600">
-                          {(focusedCard.data as VerificationRequest).aiConfidence}%
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-amber-50 p-4">
-                        <p className="mb-1 text-sm text-gray-600">Sources Found</p>
-                        <p className="text-2xl font-bold text-amber-600">
-                          {(focusedCard.data as VerificationRequest).sourcesFound} articles
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="mb-6 rounded-xl bg-gray-50 p-4">
-                      <h3 className="mb-2 font-semibold text-gray-900">Description</h3>
-                      <p className="text-gray-700">{(focusedCard.data as VerificationRequest).description}</p>
-                    </div>
-                    
-                    <div className="mb-6 rounded-xl bg-cyan-50 p-4">
-                      <h3 className="mb-2 font-semibold text-gray-900">Submitted By</h3>
-                      <p className="text-gray-700">{(focusedCard.data as VerificationRequest).reportedBy}</p>
-                    </div>
-                    
-                    <div className="mb-4 rounded-xl bg-green-50 p-4">
-                      <h3 className="mb-2 font-semibold text-gray-900">What happens after approval?</h3>
-                      <p className="text-sm text-gray-700">
-                        This disaster will be added to the active campaigns on the donation platform. The AI will monitor the situation and propose payout recommendations based on severity and need.
-                      </p>
-                    </div>
-                    
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => {
-                          handleApprove((focusedCard.data as VerificationRequest).id, "verification");
-                          handleCloseFocus();
-                        }}
-                        className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600"
-                      >
-                        <CheckCircle className="mr-2 inline h-5 w-5" />
-                        Approve & Publish
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleRequestInfo((focusedCard.data as VerificationRequest).id);
-                          handleCloseFocus();
-                        }}
-                        className="rounded-lg border-2 border-gray-300 bg-white px-6 py-3 font-medium text-gray-700 transition-all hover:border-gray-400"
-                      >
-                        <AlertCircle className="mr-2 inline h-5 w-5" />
-                        Request Info
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleReject((focusedCard.data as VerificationRequest).id, "verification");
-                          handleCloseFocus();
-                        }}
-                        className="rounded-lg border-2 border-red-300 bg-white px-6 py-3 font-medium text-red-600 transition-all hover:border-red-400 hover:bg-red-50"
-                      >
-                        <XCircle className="mr-2 inline h-5 w-5" />
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
-              
-              {/* Dots indicator inside modal */}
-              <div className="mt-4 flex justify-center gap-2">
-                {allCards.map((_, index) => (
-                  <div
-                    key={index}
-                    className={`h-2 rounded-full transition-all ${
-                      focusedCardIndex === index
-                        ? "w-8 bg-white"
-                        : "w-2 bg-white/50"
-                    }`}
+
+              <div className="mb-6">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Receiver Wallet Address
+                </label>
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={receiverWallet}
+                    onChange={(e) => setReceiverWallet(e.target.value)}
+                    placeholder="https://ilp.interledger-test.dev/receiver"
+                    className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
                   />
-                ))}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Enter the recipient organization&apos;s Open Payments wallet address
+                </p>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* BOTTOM SECTION - Live Activity Feed */}
-        <div className="rounded-2xl border-2 border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Live Activity Feed</h2>
-              <p className="text-sm text-gray-600">Real-time donations and transactions</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-medium text-teal-600">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-teal-500"></div>
-              Live
+              {payoutError && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <p className="text-sm text-red-600">{payoutError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExecutePayout}
+                  disabled={isPayoutProcessing || !receiverWallet || !payoutAmount}
+                  className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPayoutProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Initiating payout…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Send className="h-4 w-4" />
+                      Approve & Send via IDP
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                  className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-xs text-gray-500">
+                You will be redirected to the IDP to authorize this payout from the fund wallet.
+              </p>
             </div>
           </div>
 
@@ -995,3 +783,4 @@ export function AdminDashboardPage() {
     </div>
   );
 }
+

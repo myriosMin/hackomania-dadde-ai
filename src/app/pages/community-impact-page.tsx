@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigation } from "../components/navigation";
 import { Footer } from "../components/footer";
+import { TrustSection } from "../components/trust-section";
 import {
   Globe,
   TrendingUp,
@@ -26,7 +27,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
@@ -328,6 +328,10 @@ export function CommunityImpactPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mb-12">
+          <TrustSection />
         </div>
 
         {/* SECTION 2 - Recent Disasters Supported */}
@@ -665,3 +669,5 @@ export function CommunityImpactPage() {
     </div>
   );
 }
+
+
