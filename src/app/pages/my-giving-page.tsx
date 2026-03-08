@@ -83,7 +83,6 @@ function formatInterval(interval: string): string {
 
 export function MyGivingPage() {
   const { isAuthenticated, user } = useAuth();
-
   const [activeSubs, setActiveSubs] = useState<ActiveSub[]>([]);
   const [subsLoading, setSubsLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);

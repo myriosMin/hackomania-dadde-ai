@@ -96,6 +96,7 @@ export function AdminDashboardPage() {
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  // Mock data for key metrics
   const metrics = {
     fundBalance: 540000,
     activeDisasters: 7,
@@ -503,6 +504,167 @@ export function AdminDashboardPage() {
           </div>
         </section>
 
+        {/* Payout Execution Modal */}
+        {payoutModalOpen && payoutTarget && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl">
+              <button
+                onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                className="absolute right-4 top-4 rounded-full bg-gray-100 p-2 transition-all hover:bg-gray-200"
+                aria-label="Close payout modal"
+              >
+                <X className="h-5 w-5 text-gray-900" />
+              </button>
+
+              <div className="mb-6 flex items-center gap-3">
+                <div className="rounded-lg bg-teal-500 p-2">
+                  <Send className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Execute Payout</h2>
+                  <p className="text-sm text-gray-600">{payoutTarget.eventName}</p>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-xl bg-gray-50 p-4">
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">Event</span>
+                  <span className="font-medium text-gray-900">{payoutTarget.eventName}</span>
+                </div>
+                <div className="mb-2 flex justify-between text-sm">
+                  <span className="text-gray-600">AI Confidence</span>
+                  <span className="font-medium text-purple-600">{payoutTarget.aiConfidence}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Priority</span>
+                  <span className={`font-medium ${
+                    payoutTarget.severity === "high" ? "text-red-600" : payoutTarget.severity === "medium" ? "text-orange-600" : "text-yellow-600"
+                  }`}>
+                    {payoutTarget.severity.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Payout Amount ({walletAssetCode})
+                </label>
+                <input
+                  type="number"
+                  value={payoutAmount}
+                  onChange={(e) => setPayoutAmount(e.target.value)}
+                  placeholder="Amount in display units"
+                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="mb-6">
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Receiver Wallet Address
+                </label>
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={receiverWallet}
+                    onChange={(e) => setReceiverWallet(e.target.value)}
+                    placeholder="https://ilp.interledger-test.dev/receiver"
+                    className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-3 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Enter the recipient organization&apos;s Open Payments wallet address
+                </p>
+              </div>
+
+              {payoutError && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <p className="text-sm text-red-600">{payoutError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExecutePayout}
+                  disabled={isPayoutProcessing || !receiverWallet || !payoutAmount}
+                  className="flex-1 rounded-lg bg-teal-500 py-3 font-medium text-white transition-all hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPayoutProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Initiating payout…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Send className="h-4 w-4" />
+                      Approve & Send via IDP
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setPayoutModalOpen(false); setPayoutTarget(null); }}
+                  className="rounded-lg border-2 border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-xs text-gray-500">
+                You will be redirected to the IDP to authorize this payout from the fund wallet.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {liveTransactions.map((transaction) => (
+              <div
+                key={transaction.id}
+                className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-4 transition-all hover:border-teal-300 hover:bg-teal-50/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`rounded-lg p-2 ${
+                      transaction.type === "donation"
+                        ? "bg-teal-100"
+                        : transaction.type === "roundup"
+                        ? "bg-cyan-100"
+                        : transaction.type === "subscription"
+                        ? "bg-blue-100"
+                        : "bg-purple-100"
+                    }`}
+                  >
+                    {transaction.type === "payout" ? (
+                      <ArrowUp className="h-4 w-4 text-purple-600" />
+                    ) : (
+                      <ArrowDown className="h-4 w-4 text-teal-600" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {transaction.type === "donation" && "Direct Donation"}
+                      {transaction.type === "roundup" && "Round-up"}
+                      {transaction.type === "subscription" && "Monthly Pledge"}
+                      {transaction.type === "payout" && "Payout Transfer"}
+                    </p>
+                    <p className="text-xs text-gray-600">{transaction.description}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p
+                    className={`text-sm font-bold ${
+                      transaction.type === "payout" ? "text-purple-600" : "text-teal-600"
+                    }`}
+                  >
+                    {transaction.type === "payout" ? "-" : "+"}$
+                    {transaction.amount.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-500">{transaction.timestamp}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
         {/* Payout Execution Modal */}
         {payoutModalOpen && payoutTarget && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-8">
