@@ -168,6 +168,15 @@ For demo purposes, the admin can trigger a synthetic disaster alarm to show the 
 
 ---
 
+### Manual Claim Submission
+
+If a user's situation is not automatically verifiable or missed by our system, they can submit a claim manually through a form. The AI agents will still evaluate the claim based on the provided information and any available data and distribute funds if approved by the admin.
+
+![Manual Claim Submission](images/manual_claim.png)
+![Manual Claim AI](images/manual_claim_2.png)
+
+---
+
 ## 8. Notifications
 
 Users receive real-time notifications when their claim status changes, when a new disaster is declared, or when a payout is dispatched to their wallet.
